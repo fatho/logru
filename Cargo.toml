@@ -4,3 +4,10 @@ version = "0.1.0"
 authors = ["Fabian Thorand <f.thorand@gmail.com>"]
 
 [dependencies]
+
+[dev-dependencies]
+criterion = "0.2"
+
+[[bench]]
+name = "logic_solver_benchmark"
+harness = false

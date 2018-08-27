@@ -5,17 +5,6 @@ use std::collections::HashMap;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VarId(pub usize);
 
-/// The two types of failures that can occur during unification.
-#[derive(Debug, Clone)]
-pub enum UnificationFailure<A> {
-    /// Failed attempt to unify the given variable and term, because the term
-    /// contains the variable. Actually unifying those two would result in an
-    /// infinite term.
-    OccursCheckFailed(VarId, Term<A>),
-    /// The two applicative terms do not match.
-    NoMatch(Term<A>, Term<A>)
-}
-
 /// The type of terms used in unification.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Term<A> {
@@ -25,7 +14,55 @@ pub enum Term<A> {
     App(A, Vec<Term<A>>)
 }
 
-pub type UnificationResult<A, T> = Result<T, UnificationFailure<A>>;
+/// A solution for a set of constraints, assigning values to variables.
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Solution<A>(HashMap<VarId, Term<A>>);
+
+impl<A> Solution<A> {
+    /// Create a new empty solution.
+    pub fn new() -> Self {
+        Solution(HashMap::new())
+    }
+
+    /// Build a solution from a series of assignments.
+    pub fn from_assignments<I>(assignments: I) -> Solution<A>
+    where I: IntoIterator<Item=(VarId, Term<A>)> {
+        let mut solution = HashMap::new();
+        for (k, v) in assignments {
+            solution.insert(k, v);
+        }
+        Solution(solution)
+    }
+
+    pub fn insert(&mut self, var: VarId, term: Term<A>) {
+        self.0.insert(var, term);
+    }
+
+    pub fn get(&self, var: VarId) -> Option<&Term<A>> {
+        self.0.get(&var)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item=&mut Term<A>> {
+        self.0.values_mut()
+    }
+}
+
+/// The two types of failures that can occur during unification.
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum UnificationFailure {
+    /// Failed attempt to unify a variable and term, because the term contains
+    /// the variable. Actually unifying those two would result in an infinite
+    /// term.
+    OccursCheckFailed,
+    /// Two applicative terms do not match.
+    NoMatch
+}
+
+pub type UnificationResult<T> = Result<T, UnificationFailure>;
 
 /// A goal that the unifier has to prove. Currently, there are only equality
 /// goals.
@@ -54,15 +91,15 @@ impl<A> Goal<A> where A: Copy + Eq {
 pub struct Solver<A> {
     /// Current stack of goals yet to be solved
     goals: Vec<Goal<A>>,
-    /// The current substitution, based on the goals that were already solved
-    subst: HashMap<VarId, Term<A>>
+    /// The current partial solution, based on the goals that were already solved
+    solution: Solution<A>
 }
 
 impl<A> Solver<A> where A: Copy + Eq {
     pub fn new() -> Self {
         Solver {
             goals: Vec::new(),
-            subst: HashMap::new()
+            solution: Solution::new()
         }
     }
 
@@ -72,11 +109,10 @@ impl<A> Solver<A> where A: Copy + Eq {
         self.goals.push(Goal::Eq(s_norm, t_norm))
     }
 
-    pub fn step(&mut self) -> UnificationResult<A, ()> {
-        // NOTE: When this function fails, it will have removed the conflicting
-        // goal from the goal stack, so subsequent invocations might succeed
-        // again. This is probably not what we want, but it doesn't hurt in the
-        // way this solver is currently used.
+    /// Performs one solution step by processing the top most goal. If the
+    /// topmost goal is unsolvable, it remains in place and subsequent calls
+    /// will fail as well.
+    pub fn step(&mut self) -> UnificationResult<()> {
         match self.goals.pop() {
             None => Ok(()),
             Some(goal) => match goal {
@@ -87,7 +123,9 @@ impl<A> Solver<A> where A: Copy + Eq {
                     if f == g && fargs.len() == gargs.len() {
                         Ok(self.goals.extend(fargs.into_iter().zip(gargs.into_iter()).map(|(s, t)| Goal::Eq(s, t))))
                     } else {
-                        Err(UnificationFailure::NoMatch(Term::App(f, fargs), Term::App(g, gargs)))
+                        // unpop unsolvable goal
+                        self.goals.push(Goal::Eq(Term::App(f, fargs), Term::App(g, gargs)));
+                        Err(UnificationFailure::NoMatch)
                     }
                 }
                 // eliminate constraints where one or both sides are a single
@@ -96,16 +134,18 @@ impl<A> Solver<A> where A: Copy + Eq {
                 Goal::Eq(t@Term::App(_, _), Term::Var(x)) |
                 Goal::Eq(Term::Var(x), t) => {
                     if t.occurs(x) {
-                        Err(UnificationFailure::OccursCheckFailed(x, t))
+                        // unpop unsolvable goal
+                        self.goals.push(Goal::Eq(Term::Var(x), t));
+                        Err(UnificationFailure::OccursCheckFailed)
                     } else {
                         // apply the new substitution to all remaining goals and existing substitutions
-                        for v in self.subst.values_mut() {
+                        for v in self.solution.values_mut() {
                             v.subst(&mut |y| if y == x { Some(t.clone()) } else { None });
                         }
                         for g in self.goals.iter_mut() {
                             g.subst(&mut |y| if y == x { Some(t.clone()) } else { None });
                         }
-                        self.subst.insert(x, t); Ok(())
+                        self.solution.insert(x, t); Ok(())
                     }
                 }
             }
@@ -113,7 +153,7 @@ impl<A> Solver<A> where A: Copy + Eq {
     }
 
     /// Solve the current set of goals, or fail.
-    pub fn solve(&mut self) -> UnificationResult<A, ()> {
+    pub fn solve(&mut self) -> UnificationResult<()> {
         // this always terminates, because every step brings us closer to the
         // solution or fails
         while !self.goals.is_empty() {
@@ -125,13 +165,13 @@ impl<A> Solver<A> where A: Copy + Eq {
     /// Apply the current substitution to a term.
     pub fn normalize(&self, t: Term<A>) -> Term<A> {
         match t {
-            Term::Var(x) => self.subst.get(&x).map_or(Term::Var(x), Clone::clone),
+            Term::Var(x) => self.solution.get(x).map_or(Term::Var(x), Clone::clone),
             Term::App(f, args) => Term::App(f, args.into_iter().map(|s| self.normalize(s)).collect())
         }
     }
 
-    pub fn subst(&self) -> &HashMap<VarId, Term<A>> {
-        &self.subst
+    pub fn solution(&self) -> &Solution<A> {
+        &self.solution
     }
 }
 
@@ -157,5 +197,72 @@ impl<A> Term<A> where A: Copy + Eq {
         if let Some(new_self) = new {
             *self = new_self;
         }
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    enum Atom {
+        Leaf, Node
+    }
+
+    fn leaf() -> Term<Atom> {
+        Term::App(Atom::Leaf, vec![])
+    }
+
+    fn node2(s: Term<Atom>, t: Term<Atom>) -> Term<Atom> {
+        Term::App(Atom::Node, vec![s, t])
+    }
+
+    fn node3(s: Term<Atom>, t: Term<Atom>, u: Term<Atom>) -> Term<Atom> {
+        Term::App(Atom::Node, vec![s, t, u])
+    }
+
+    fn var<A>(v: usize) -> Term<A> {
+        Term::Var(VarId(v))
+    }
+
+    #[test]
+    pub fn occurs_check() {
+        let mut solver = Solver::new();
+        solver.push_eq(node2(leaf(), var(0)), var(0));
+        assert_eq!(solver.solve(), Err(UnificationFailure::OccursCheckFailed))
+    }
+
+    #[test]
+    pub fn different_applicative_head() {
+        let mut solver = Solver::new();
+        solver.push_eq(node2(leaf(), var(0)), leaf());
+        assert_eq!(solver.solve(), Err(UnificationFailure::NoMatch))
+    }
+
+    #[test]
+    pub fn same_applicative_head_different_arg_length() {
+        let mut solver = Solver::new();
+        solver.push_eq(node2(leaf(), var(0)), node3(var(1), leaf(), leaf()));
+        assert_eq!(solver.solve(), Err(UnificationFailure::NoMatch))
+    }
+
+    #[test]
+    pub fn multiple_goals_conflict() {
+        let mut solver = Solver::new();
+        solver.push_eq(node2(leaf(), var(0)), node2(var(1), leaf()));
+        solver.push_eq(node2(leaf(), node3(leaf(), leaf(), leaf())), node2(var(1), var(0)));
+        assert_eq!(solver.solve(), Err(UnificationFailure::NoMatch))
+    }
+
+    #[test]
+    pub fn unifies() {
+        let mut solver = Solver::new();
+        solver.push_eq(node2(leaf(), var(0)), node2(var(1), node3(leaf(), node2(var(1), leaf()), leaf())));
+        assert_eq!(solver.solve(), Ok(()));
+        assert_eq!(solver.solution(), &Solution::from_assignments(vec![
+            (VarId(0), node3(leaf(), node2(leaf(), leaf()), leaf())),
+            (VarId(1), leaf())
+        ]));
     }
 }

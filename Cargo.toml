@@ -1,6 +1,6 @@
 [package]
 name = "logru"
 version = "0.1.0"
-authors = ["fatho"]
+authors = ["Fabian Thorand <f.thorand@gmail.com>"]
 
 [dependencies]

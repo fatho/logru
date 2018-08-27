@@ -1,5 +1,5 @@
 use unification;
-use unification::{Term, VarId};
+use unification::{Term, VarId, Solution};
 
 use std;
 use std::rc::Rc;
@@ -109,10 +109,6 @@ pub enum Step<A> {
     Found(Solution<A>),
 }
 
-/// A solution that makes a query true.
-#[derive(Debug)]
-pub struct Solution<A>(HashMap<VarId, Term<A>>);
-
 impl<'a, A> Query<'a, A> where A: Copy + Eq {
     pub fn new<T>(rules: &'a RuleSet<A>, goals: T) -> Self where T: IntoIterator<Item=Term<A>> {
         let name_source = NameSource::new(0);
@@ -160,9 +156,11 @@ impl<'a, A> Query<'a, A> where A: Copy + Eq {
     /// Build a solution from the solver state, by renaming the internal
     /// variables back to those that have been used in the original goals.
     fn build_solution<S>(&self, solver: S) -> Solution<A> where S: std::ops::Deref<Target=unification::Solver<A>> {
-        let mut solution = HashMap::new();
+        let mut solution = Solution::new();
+        // populate solution with all variables that have been created during
+        // goal creation
         for (renamed, original) in self.goal_refresher.resubst() {
-            let var_solution = match solver.subst().get(renamed).map(Clone::clone) {
+            let var_solution = match solver.solution().get(*renamed).map(Clone::clone) {
                 None => Term::Var(*original),
                 Some(mut t) => {
                     self.goal_refresher.undo_refresh(&mut t); t
@@ -170,7 +168,7 @@ impl<'a, A> Query<'a, A> where A: Copy + Eq {
             };
             solution.insert(*original, var_solution);
         }
-        Solution(solution)
+        solution
     }
 
     /// Resolve a goal term originating from the given stack, producing new
@@ -296,5 +294,127 @@ impl Refresher {
     /// Undo the renaming that has been performed as part of the refreshing.
     pub fn undo_refresh<A>(&self, term: &mut Term<A>) where A: Copy + Eq {
         term.subst(&mut |x| self.undo_refresh_var(x))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::unification::*;
+
+    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+    enum Atom {
+        Z, S, Add, Or, Eq
+    }
+
+    fn z() -> Term<Atom> {
+        Term::App(Atom::Z, Vec::new())
+    }
+
+    fn s(t: Term<Atom>) -> Term<Atom> {
+        Term::App(Atom::S, vec![t])
+    }
+
+    fn var<A>(v: usize) -> Term<A> {
+        Term::Var(VarId(v))
+    }
+
+    fn add(a: Term<Atom>, b: Term<Atom>, result: Term<Atom>) -> Term<Atom> {
+        Term::App(Atom::Add, vec![a, b, result])
+    }
+
+    fn or(a: Term<Atom>, b: Term<Atom>) -> Term<Atom> {
+        Term::App(Atom::Or, vec![a, b])
+    }
+
+    fn eq(a: Term<Atom>, b: Term<Atom>) -> Term<Atom> {
+        Term::App(Atom::Eq, vec![a, b])
+    }
+
+    fn default_rules() -> RuleSet<Atom> {
+        let mut pl = RuleSet::new();
+        pl.add_rule(add(var(0), z(), var(0)), vec![]);
+        pl.add_rule(add(var(0), s(var(1)), s(var(2))), vec![add(var(0), var(1), var(2))]);
+        pl.add_rule(or(var(0), var(1)), vec![var(0)]);
+        pl.add_rule(or(var(0), var(1)), vec![var(1)]);
+        pl.add_rule(eq(var(0), var(0)), vec![]);
+        pl
+    }
+
+    #[test]
+    fn addition() {
+        let pl = default_rules();
+        let mut q = pl.query(vec![
+            add(var(0), s(s(z())), s(s(s(s(z())))))
+        ]);
+        // single solution with the right answer
+        assert_eq!(q.next(), Some(Solution::from_assignments(vec![(VarId(0), s(s(z())))])));
+        // no further solutions
+        assert_eq!(q.next(), None);
+    }
+
+    #[test]
+    fn equality() {
+        let pl = default_rules();
+        let mut q = pl.query(vec![
+            eq(s(s(var(0))), s(var(1))),
+            eq(s(var(0)), s(z()))
+        ]);
+        // single solution with the right answer
+        assert_eq!(q.next(), Some(Solution::from_assignments(vec![(VarId(0), z()), (VarId(1), s(z()))])));
+        // no further solutions
+        assert_eq!(q.next(), None);
+    }
+
+    #[test]
+    fn two_solutions() {
+        let pl = default_rules();
+        let mut q = pl.query(vec![
+            or(add(var(0), s(s(z())), s(s(s(s(z()))))),
+               add(var(0), s(s(z())), s(s(s(z()))))),
+        ]);
+        // two solution
+        assert_eq!(q.next(), Some(Solution::from_assignments(vec![(VarId(0), s(s(z())))])));
+        assert_eq!(q.next(), Some(Solution::from_assignments(vec![(VarId(0), s(z()))])));
+        // no further solutions
+        assert_eq!(q.next(), None);
+    }
+
+    #[test]
+    fn one_solutions() {
+        let pl = default_rules();
+        let mut q = pl.query(vec![
+            or(add(var(0), s(s(z())), s(s(s(s(z()))))),
+               add(var(0), s(s(z())), s(s(s(z()))))),
+            or(eq(var(0), s(s(z()))),
+               eq(s(s(s(z()))), var(0)))
+        ]);
+        // two solution
+        assert_eq!(q.next(), Some(Solution::from_assignments(vec![(VarId(0), s(s(z())))])));
+        // no further solutions
+        assert_eq!(q.next(), None);
+    }
+
+    #[test]
+    fn underspecified_query() {
+        let pl = default_rules();
+        let mut q = pl.query(vec![
+            add(var(0), s(s(z())), s(s(var(0))))
+        ]);
+        // one underspecified solution (variable maps to itself)
+        assert_eq!(q.next(), Some(Solution::from_assignments(vec![(VarId(0), var(0))])));
+        // no further solutions
+        assert_eq!(q.next(), None);
+    }
+
+    #[test]
+    fn failure() {
+        let pl = default_rules();
+        let mut q = pl.query(vec![
+            add(s(s(z())), var(0), s(s(var(1)))),
+            add(var(0), s(s(s(s(var(1))))), s(s(z())))
+        ]);
+        // no further solutions
+        assert_eq!(q.next(), None);
     }
 }

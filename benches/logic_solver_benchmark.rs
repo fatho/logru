@@ -3,11 +3,15 @@ extern crate criterion;
 
 extern crate logru;
 
+use criterion::Criterion;
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("zebra puzzle", |b| {
-        let rules = zebra_puzzle_rules();
-        b.iter(|| zebra_puzzle(&rules))
+        let rules = logru::zebra::puzzle_rules();
+        b.iter(|| {
+            let mut q = rules.query(vec![logru::zebra::puzzle(logru::zebra::var(0))]);
+            let _ = q.next();
+        })
     });
 }
 

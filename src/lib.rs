@@ -3,59 +3,44 @@ pub mod zebra;
 
 #[derive(Debug)]
 pub struct Universe {
-    fresh_symbol: usize,
-    fresh_var: usize,
-    predicates: Vec<PredInfo>,
+    symbols: Vec<SymInfo>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Sym(usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Pred(usize);
+impl Sym {
+    pub fn apply(self, args: Vec<Term>) -> AppTerm {
+        AppTerm { functor: self, args }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Var(usize);
 
 impl Universe {
     pub fn new_symbol(&mut self) -> Sym {
-        let sym = Sym(self.fresh_symbol);
-        self.fresh_symbol += 1;
+        let sym = Sym(self.symbols.len());
+        self.symbols.push(SymInfo::new());
         sym
     }
 
-    pub fn new_predicate(&mut self) -> Pred {
-        let pred = Pred(self.predicates.len());
-        self.predicates.push(PredInfo::new());
-        pred
-    }
-
-    pub fn add_rule<const N: usize>(&mut self, definer: impl FnOnce([Var; N]) -> Rule) {
-        // initialize variable array
-        let mut vars = [Var(0); N];
-        vars.iter_mut().for_each(|var| *var = self.new_var());
-
+    pub fn add_rule(&mut self, rule: Rule) {
         // define rule
-        let rule = definer(vars);
-        self.predicates[rule.head.pred.0].definitions.push(rule);
+        self.symbols[rule.head.functor.0].definitions.push(rule);
     }
 
-    pub fn query<const N: usize>(&self, _goals: impl FnOnce([Var; N]) -> Vec<Goal>) -> Solver {
-        Solver {}
+    pub fn query(&self, goals: Vec<AppTerm>) -> Solver {
+        Solver {
+            universe: self,
+            goals,
+        }
     }
 
     pub fn new() -> Self {
         Self {
-            fresh_symbol: 0,
-            fresh_var: 0,
-            predicates: vec![],
+            symbols: vec![],
         }
-    }
-
-    fn new_var(&mut self) -> Var {
-        let var = Var(self.fresh_var);
-        self.fresh_var += 1;
-        var
     }
 }
 
@@ -65,12 +50,22 @@ impl Default for Universe {
     }
 }
 
+pub fn quantify<R, const N: usize>(f: impl FnOnce([Var; N]) -> R) -> R {
+    // initialize variable array with temporary fresh variables
+    //   that disappear once we're done solving
+    let mut vars = [Var(0); N];
+    vars.iter_mut()
+        .enumerate()
+        .for_each(|(i, var)| *var = Var(i));
+    f(vars)
+}
+
 #[derive(Debug)]
-struct PredInfo {
+struct SymInfo {
     definitions: Vec<Rule>,
 }
 
-impl PredInfo {
+impl SymInfo {
     fn new() -> Self {
         Self {
             definitions: vec![],
@@ -78,63 +73,101 @@ impl PredInfo {
     }
 }
 
-pub struct Solver {}
-
-impl Iterator for Solver {
-    type Item = ();
-
-    fn next(&mut self) -> Option<Self::Item> {
-        todo!()
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Value {
+pub enum Term {
     Var(Var),
-    Sym(Sym),
+    App(AppTerm),
 }
 
-impl From<Var> for Value {
+impl From<Var> for Term {
     fn from(v: Var) -> Self {
-        Value::Var(v)
+        Term::Var(v)
     }
 }
 
-impl From<Sym> for Value {
+impl From<Sym> for Term {
     fn from(s: Sym) -> Self {
-        Value::Sym(s)
+        Term::App(s.into())
+    }
+}
+
+impl From<AppTerm> for Term {
+    fn from(at: AppTerm) -> Self {
+        Term::App(at)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Goal {
-    pred: Pred,
-    args: Vec<Value>,
+pub struct AppTerm {
+    pub functor: Sym,
+    pub args: Vec<Term>,
 }
 
-impl Goal {
-    pub fn new(pred: Pred, args: Vec<Value>) -> Self {
-        Self { pred, args }
+impl From<Sym> for AppTerm {
+    fn from(s: Sym) -> Self {
+        Self { functor: s, args: vec![] }
     }
 }
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule {
-    head: Goal,
-    tail: Vec<Goal>,
+    head: AppTerm,
+    tail: Vec<AppTerm>,
 }
 
 impl Rule {
-    pub fn fact(pred: Pred, args: Vec<Value>) -> Self {
+    pub fn fact(pred: Sym, args: Vec<Term>) -> Self {
         Self {
-            head: Goal { pred, args },
+            head: AppTerm { functor: pred, args},
             tail: vec![],
         }
     }
 
-    pub fn when(mut self, pred: Pred, args: Vec<Value>) -> Self {
-        self.tail.push(Goal { pred, args });
+    pub fn when(mut self, pred: Sym, args: Vec<Term>) -> Self {
+        self.tail.push(AppTerm { functor: pred, args}.into());
         self
+    }
+}
+
+pub struct Solver<'u> {
+    universe: &'u Universe,
+    goals: Vec<AppTerm>,
+    //assignments: Vec<Option<Sym>>,
+}
+
+enum Step {
+    Yield,
+    Skip,
+    Done,
+}
+
+impl<'u> Solver<'u> {
+    fn step(&mut self) -> Step {
+        // if let Some(goal) = self.goals.pop() {
+
+        //     // resolve goal
+
+
+        //     todo!()
+        // } else {
+        //     todo!("backtrack")
+        // }
+        todo!()
+    }
+}
+
+impl<'u> Iterator for Solver<'u> {
+    type Item = ();
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.step() {
+                Step::Yield => todo!(),
+                Step::Skip => continue,
+                Step::Done => break None,
+            }
+        }
     }
 }
 
@@ -177,31 +210,35 @@ mod test {
         let dave = u.new_symbol();
         let eve = u.new_symbol();
 
-        let parent = u.new_predicate();
-        let grandparent = u.new_predicate();
-        let siblings = u.new_predicate();
+        let parent = u.new_symbol();
+        let grandparent = u.new_symbol();
+        let siblings = u.new_symbol();
 
-        u.add_rule(|[]| Rule::fact(parent, vec![alice.into(), carol.into()]));
-        u.add_rule(|[]| Rule::fact(parent, vec![bob.into(), carol.into()]));
+        u.add_rule(Rule::fact(parent, vec![alice.into(), carol.into()]));
+        u.add_rule(Rule::fact(parent, vec![bob.into(), carol.into()]));
 
-        u.add_rule(|[]| Rule::fact(parent, vec![carol.into(), eve.into()]));
-        u.add_rule(|[]| Rule::fact(parent, vec![dave.into(), eve.into()]));
+        u.add_rule(Rule::fact(parent, vec![carol.into(), eve.into()]));
+        u.add_rule(Rule::fact(parent, vec![dave.into(), eve.into()]));
 
-        u.add_rule(|[p, q, r]| {
+        u.add_rule(quantify(|[p, q, r]| {
             Rule::fact(grandparent, vec![p.into(), r.into()])
                 .when(parent, vec![p.into(), q.into()])
                 .when(parent, vec![q.into(), r.into()])
-        });
+        }));
 
-        u.add_rule(|[p, c1, c2]| {
+        u.add_rule(quantify(|[p, c1, c2]| {
             Rule::fact(siblings, vec![c1.into(), c2.into()])
                 .when(parent, vec![p.into(), c1.into()])
                 .when(parent, vec![p.into(), c2.into()])
-        });
+        }));
 
-        let solver = u.query(|[x]| vec![Goal::new(grandparent, vec![x.into(), eve.into()])]);
+        let solver = u.query(quantify(|[x]| {
+            vec![grandparent.apply(vec![x.into(), eve.into()])]
+        }));
         for solution in solver {
             println!("{:?}", solution);
         }
+
+        panic!()
     }
 }

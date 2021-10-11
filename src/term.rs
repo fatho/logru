@@ -12,6 +12,13 @@ impl Term {
             backtrack: vec![&self],
         }
     }
+
+    pub fn instantiate(&self, offset: usize) -> Term {
+        match self {
+            Term::Var(v) => Term::Var(Var(v.0 + offset)),
+            Term::App(appterm) => Term::App(appterm.instantiate(offset)),
+        }
+    }
 }
 
 impl From<Var> for Term {
@@ -50,6 +57,13 @@ impl AppTerm {
             backtrack: self.args.iter().rev().collect()
         }
     }
+
+    pub fn instantiate(&self, offset: usize) -> AppTerm {
+        AppTerm {
+            functor: self.functor,
+            args: self.args.iter().map(|t| t.instantiate(offset)).collect(),
+        }
+    }
 }
 
 pub struct VarIter<'a> {
@@ -66,6 +80,29 @@ impl<'a> Iterator for VarIter<'a> {
                     Term::Var(var) => break Some(*var),
                     Term::App(app) => {
                         self.backtrack.extend(app.args.iter().rev());
+                    },
+                }
+                None => break None,
+            }
+        }
+    }
+}
+
+
+pub struct VarIterMut<'a> {
+    backtrack: Vec<&'a mut Term>,
+}
+
+impl<'a> Iterator for VarIterMut<'a> {
+    type Item = &'a mut Var;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.backtrack.pop() {
+                Some(term) => match term {
+                    Term::Var(var) => break Some(var),
+                    Term::App(app) => {
+                        self.backtrack.extend(app.args.iter_mut().rev());
                     },
                 }
                 None => break None,

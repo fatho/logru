@@ -20,10 +20,10 @@ impl Term {
         }
     }
 
-    pub fn occurs(&self, var: Var) -> bool {
+    pub fn count_var_slots(&self) -> usize {
         match self {
-            Term::Var(v) => *v == var,
-            Term::App(app) => app.occurs(var),
+            Term::Var(v) => v.0 + 1,
+            Term::App(app) => app.count_var_slots(),
         }
     }
 }
@@ -72,8 +72,8 @@ impl AppTerm {
         }
     }
 
-    fn occurs(&self, var: Var) -> bool {
-        self.args.iter().any(|t| t.occurs(var))
+    pub fn count_var_slots(&self) -> usize {
+        self.args.iter().map(|t| t.count_var_slots()).max().unwrap_or(0)
     }
 }
 

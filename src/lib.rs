@@ -100,38 +100,31 @@ impl SymInfo {
 pub struct Rule {
     head: AppTerm,
     tail: Vec<AppTerm>,
+    var_slots: usize,
 }
 
 impl Rule {
     pub fn fact(pred: Sym, args: Vec<Term>) -> Self {
+        let head = AppTerm {
+            functor: pred,
+            args,
+        };
+        let var_slots = head.count_var_slots();
         Self {
-            head: AppTerm {
-                functor: pred,
-                args,
-            },
+            head,
             tail: vec![],
+            var_slots,
         }
     }
 
     pub fn when(mut self, pred: Sym, args: Vec<Term>) -> Self {
-        self.tail.push(
-            AppTerm {
-                functor: pred,
-                args,
-            }
-            .into(),
-        );
+        let app_term = AppTerm {
+            functor: pred,
+            args,
+        };
+        self.var_slots = self.var_slots.max(app_term.count_var_slots());
+        self.tail.push(app_term.into());
         self
-    }
-
-    pub fn max_var(&self) -> usize {
-        std::iter::once(&self.head)
-            .chain(self.tail.iter())
-            .map(|goal| goal.vars())
-            .flatten()
-            .map(|v| v.0)
-            .max()
-            .unwrap_or(0)
     }
 }
 
@@ -300,8 +293,7 @@ impl SolutionState {
     ) -> Option<impl Iterator<Item = term_arena::TermId> + 'a> {
         // add uninstantiated variables for the rule
         let var_offset = self.variables.len();
-        let rule_vars = rule.max_var() + 1;
-        self.allocate_vars(rule_vars);
+        self.allocate_vars(rule.var_slots);
 
         let instantiated_rule_head = self.instantiate_app(&rule.head, var_offset);
 

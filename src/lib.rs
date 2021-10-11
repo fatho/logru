@@ -135,10 +135,6 @@ pub struct Solver<'u> {
     solution: SolutionState,
 }
 
-enum SolverOp {
-    AssignedVar(Var),
-}
-
 struct Checkpoint<'u> {
     goal: AppTerm,
     alternatives: Vec<&'u Rule>,
@@ -148,7 +144,7 @@ struct Checkpoint<'u> {
 
 struct SolutionState {
     variables: Vec<Option<Term>>,
-    operations: Vec<SolverOp>,
+    assignments: Vec<Var>,
     goal_vars: usize,
 }
 
@@ -160,7 +156,7 @@ struct SolutionCheckpoint {
 impl SolutionState {
     fn new(goal_vars: usize) -> Self {
         Self {
-            operations: vec![],
+            assignments: vec![],
             variables: vec![None; goal_vars],
             goal_vars: goal_vars,
         }
@@ -178,27 +174,24 @@ impl SolutionState {
         }
 
         self.variables[var.0] = Some(value);
-        self.operations.push(SolverOp::AssignedVar(var));
+        self.assignments.push(var);
 
         true
     }
 
     fn checkpoint(&self) -> SolutionCheckpoint {
         SolutionCheckpoint {
-            operations_checkpoint: self.operations.len(),
+            operations_checkpoint: self.assignments.len(),
             variables_checkpoint: self.variables.len(),
         }
     }
 
     fn restore(&mut self, checkpoint: &SolutionCheckpoint) {
-        for op in self
-            .operations
+        for var in self
+            .assignments
             .drain(checkpoint.operations_checkpoint..)
-            .rev()
         {
-            match op {
-                SolverOp::AssignedVar(var) => self.variables[var.0] = None,
-            }
+            self.variables[var.0] = None;
         }
         self.variables.truncate(checkpoint.variables_checkpoint);
     }

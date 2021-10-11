@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use crate::{Sym, Var};
 
 
@@ -33,7 +31,7 @@ impl TermArena {
         let arg_start = self.args.len();
         let arg_end = arg_start + args.len();
         self.args.extend_from_slice(args);
-        self.terms.push(Term::App(functor, ArgRange(arg_start..arg_end)));
+        self.terms.push(Term::App(functor, ArgRange { start: arg_start, end: arg_end }));
         term
     }
 
@@ -48,7 +46,7 @@ impl TermArena {
     }
 
     pub fn get_term(&self, term_id: TermId) -> Term {
-        self.terms[term_id.0].clone()
+        self.terms[term_id.0]
     }
 
 
@@ -68,31 +66,40 @@ impl TermArena {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ArgRange(Range<usize>);
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ArgRange {
+    start: usize,
+    end: usize,
+}
 
 impl Iterator for ArgRange {
     type Item = ArgId;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(ArgId)
+        let start = self.start;
+        if start == self.end {
+            None
+        } else {
+            self.start += 1;
+            Some(ArgId(start))
+        }
     }
 
     fn any<F>(&mut self, mut f: F) -> bool
     where
             Self: Sized,
             F: FnMut(Self::Item) -> bool, {
-        self.0.any(move |x| f(ArgId(x)))
+        (self.start..self.end).any(move |x| f(ArgId(x)))
     }
 }
 
 impl ArgRange {
     pub fn len(&self) -> usize {
-        self.0.end - self.0.start
+        self.end - self.start
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Term {
     Var(Var),
     App(Sym, ArgRange),

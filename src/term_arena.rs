@@ -1,21 +1,15 @@
-use std::ops::Range;
-
-use crate::{Sym, Var, term};
-
-
-pub struct Solver {
-
-}
-
+use crate::{Sym, Var};
 
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(transparent)]
 pub struct TermId(usize);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(transparent)]
 pub struct ArgId(usize);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TermArena {
     terms: Vec<Term>,
     args: Vec<TermId>,
@@ -37,7 +31,7 @@ impl TermArena {
         let arg_start = self.args.len();
         let arg_end = arg_start + args.len();
         self.args.extend_from_slice(args);
-        self.terms.push(Term::App(functor, ArgId(arg_start)..ArgId(arg_end)));
+        self.terms.push(Term::App(functor, ArgRange { start: arg_start, end: arg_end }));
         term
     }
 
@@ -46,13 +40,28 @@ impl TermArena {
         self.app(atom, &[])
     }
 
+    pub fn instantiate(&mut self, blueprint: &TermArena, var_offset: usize) -> impl Fn(TermId) -> TermId {
+        let here = self.checkpoint();
+        self.terms.extend(blueprint.terms.iter().map(|term| match term {
+            Term::Var(var) => Term::Var(Var(var.0 + var_offset)),
+            Term::App(func, args) => Term::App(*func, ArgRange {
+                start: args.start + here.args,
+                end: args.end + here.args,
+            }),
+        }));
+        self.args.extend(blueprint.args.iter().map(|term_id| TermId(term_id.0 + here.terms)));
+
+        let term_offset = here.terms;
+        move |TermId(old)| TermId(old + term_offset)
+    }
+
 
     pub fn get_arg(&self, arg_id: ArgId) -> TermId {
         self.args[arg_id.0]
     }
 
     pub fn get_term(&self, term_id: TermId) -> Term {
-        self.terms[term_id.0].clone()
+        self.terms[term_id.0]
     }
 
 
@@ -63,7 +72,7 @@ impl TermArena {
         }
     }
 
-    pub fn release(&mut self, checkpoint: Checkpoint) {
+    pub fn release(&mut self, checkpoint: &Checkpoint) {
         if checkpoint.args > self.args.len() || checkpoint.terms > self.terms.len() {
             panic!("{:?} cannot be restored at this moment", checkpoint);
         }
@@ -72,10 +81,48 @@ impl TermArena {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ArgRange {
+    start: usize,
+    end: usize,
+}
+
+impl Iterator for ArgRange {
+    type Item = ArgId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let start = self.start;
+        if start == self.end {
+            None
+        } else {
+            self.start += 1;
+            Some(ArgId(start))
+        }
+    }
+
+    fn any<F>(&mut self, mut f: F) -> bool
+    where
+            Self: Sized,
+            F: FnMut(Self::Item) -> bool, {
+        (self.start..self.end).any(move |x| f(ArgId(x)))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl ArgRange {
+    pub fn len(&self) -> usize {
+        self.end - self.start
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Term {
     Var(Var),
-    App(Sym, Range<ArgId>),
+    App(Sym, ArgRange),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

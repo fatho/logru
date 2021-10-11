@@ -1,9 +1,10 @@
+pub mod named;
 pub mod term;
 pub mod term_arena;
 pub mod union_find;
-pub mod named;
 
 use term::*;
+use term_arena::TermArena;
 
 #[derive(Debug)]
 pub struct Universe {
@@ -34,7 +35,9 @@ impl Universe {
 
     pub fn add_rule(&mut self, rule: Rule) {
         // define rule
-        self.symbols[rule.head.functor.0].definitions.push(rule);
+        self.symbols[rule.head.functor.0]
+            .definitions
+            .push(rule.compile());
     }
 
     pub fn query(&self, goals: Vec<AppTerm>) -> Solver {
@@ -46,12 +49,20 @@ impl Universe {
             .map(|v| v.0)
             .max()
             .map_or(0, |x| x + 1);
+
+        let mut solution = SolutionState::new(max_var);
+
+        let mut scratch = Vec::new();
+
         // initialize solver
         Solver {
             universe: self,
-            unresolved_goals: goals,
+            unresolved_goals: goals
+                .iter()
+                .map(|app| instantiate_app(&mut solution.terms, &mut scratch, &app, 0))
+                .collect(),
             checkpoints: vec![],
-            solution: SolutionState::new(max_var),
+            solution,
         }
     }
 
@@ -78,7 +89,7 @@ pub fn quantify<R, const N: usize>(f: impl FnOnce([Var; N]) -> R) -> R {
 
 #[derive(Debug)]
 struct SymInfo {
-    definitions: Vec<Rule>,
+    definitions: Vec<CompiledRule>,
 }
 
 impl SymInfo {
@@ -89,6 +100,15 @@ impl SymInfo {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CompiledRule {
+    head_blueprint: TermArena,
+    head: term_arena::TermId,
+    tail_blueprint: TermArena,
+    tail: Vec<term_arena::TermId>,
+    var_slots: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule {
     head: AppTerm,
@@ -97,60 +117,73 @@ pub struct Rule {
 
 impl Rule {
     pub fn fact(pred: Sym, args: Vec<Term>) -> Self {
-        Self {
-            head: AppTerm {
-                functor: pred,
-                args,
-            },
-            tail: vec![],
-        }
+        let head = AppTerm {
+            functor: pred,
+            args,
+        };
+        Self { head, tail: vec![] }
     }
 
     pub fn when(mut self, pred: Sym, args: Vec<Term>) -> Self {
-        self.tail.push(
-            AppTerm {
-                functor: pred,
-                args,
-            }
-            .into(),
-        );
+        let app_term = AppTerm {
+            functor: pred,
+            args,
+        };
+        self.tail.push(app_term.into());
         self
     }
 
-    pub fn max_var(&self) -> usize {
-        std::iter::once(&self.head)
-            .chain(self.tail.iter())
-            .map(|goal| goal.vars())
-            .flatten()
-            .map(|v| v.0)
-            .max()
-            .unwrap_or(0)
+    pub fn compile(&self) -> CompiledRule {
+        let mut scratch = Vec::new();
+        let mut head_blueprint = TermArena::new();
+        let mut tail_blueprint = TermArena::new();
+        let head = instantiate_app(&mut head_blueprint, &mut scratch, &self.head, 0);
+        let tail = self
+            .tail
+            .iter()
+            .map(|tail| instantiate_app(&mut tail_blueprint, &mut scratch, tail, 0))
+            .collect();
+        CompiledRule {
+            head_blueprint,
+            head,
+            tail_blueprint,
+            tail,
+            var_slots: self.head.count_var_slots().max(
+                self.tail
+                    .iter()
+                    .map(|tail| tail.count_var_slots())
+                    .max()
+                    .unwrap_or(0),
+            ),
+        }
     }
 }
 
 pub struct Solver<'u> {
     universe: &'u Universe,
-    unresolved_goals: Vec<AppTerm>,
+    unresolved_goals: Vec<term_arena::TermId>,
     checkpoints: Vec<Checkpoint<'u>>,
     solution: SolutionState,
 }
 
 struct Checkpoint<'u> {
-    goal: AppTerm,
-    alternatives: Vec<&'u Rule>,
+    goal: term_arena::TermId,
+    alternatives: Vec<&'u CompiledRule>,
     goals_checkpoint: usize,
     solution_checkpoint: SolutionCheckpoint,
 }
 
 struct SolutionState {
-    variables: Vec<Option<Term>>,
+    variables: Vec<Option<term_arena::TermId>>,
     assignments: Vec<Var>,
     goal_vars: usize,
+    terms: TermArena,
 }
 
 struct SolutionCheckpoint {
     operations_checkpoint: usize,
     variables_checkpoint: usize,
+    terms_checkpoint: term_arena::Checkpoint,
 }
 
 impl SolutionState {
@@ -159,6 +192,7 @@ impl SolutionState {
             assignments: vec![],
             variables: vec![None; goal_vars],
             goal_vars: goal_vars,
+            terms: TermArena::new(),
         }
     }
 
@@ -166,10 +200,10 @@ impl SolutionState {
         self.variables.resize(self.variables.len() + num_vars, None);
     }
 
-    fn set_var(&mut self, var: Var, value: Term) -> bool {
-        assert!(self.variables[var.0].is_none());
+    fn set_var(&mut self, var: Var, value: term_arena::TermId) -> bool {
+        debug_assert!(self.variables[var.0].is_none());
 
-        if value.occurs(var) {
+        if self.occurs(var, value) {
             return false;
         }
 
@@ -179,40 +213,46 @@ impl SolutionState {
         true
     }
 
+    fn occurs(&self, var: Var, term: term_arena::TermId) -> bool {
+        match self.terms.get_term(term) {
+            term_arena::Term::Var(v) => v == var,
+            term_arena::Term::App(_, mut args) => {
+                args.any(|arg_id| self.occurs(var, self.terms.get_arg(arg_id)))
+            }
+        }
+    }
+
     fn checkpoint(&self) -> SolutionCheckpoint {
         SolutionCheckpoint {
             operations_checkpoint: self.assignments.len(),
             variables_checkpoint: self.variables.len(),
+            terms_checkpoint: self.terms.checkpoint(),
         }
     }
 
     fn restore(&mut self, checkpoint: &SolutionCheckpoint) {
-        for var in self
-            .assignments
-            .drain(checkpoint.operations_checkpoint..)
-        {
+        for var in self.assignments.drain(checkpoint.operations_checkpoint..) {
             self.variables[var.0] = None;
         }
         self.variables.truncate(checkpoint.variables_checkpoint);
+        self.terms.release(&checkpoint.terms_checkpoint);
     }
 
-    fn substitute(&self, term: &Term) -> Term {
-        match term {
-            Term::Var(v) => {
+    fn substitute(&self, term: term_arena::TermId) -> Term {
+        match self.terms.get_term(term) {
+            term_arena::Term::Var(v) => {
                 if let Some(value) = &self.variables[v.0] {
-                    self.substitute(value)
+                    self.substitute(*value)
                 } else {
-                    Term::Var(*v)
+                    Term::Var(v)
                 }
             }
-            Term::App(app) => Term::App(self.substitute_app(app)),
-        }
-    }
-
-    fn substitute_app(&self, term: &AppTerm) -> AppTerm {
-        AppTerm {
-            functor: term.functor,
-            args: term.args.iter().map(|t| self.substitute(t)).collect(),
+            term_arena::Term::App(functor, args) => Term::App(AppTerm {
+                functor,
+                args: args
+                    .map(|arg_id| self.substitute(self.terms.get_arg(arg_id)))
+                    .collect(),
+            }),
         }
     }
 
@@ -220,80 +260,108 @@ impl SolutionState {
         self.variables
             .iter()
             .take(self.goal_vars)
-            .map(|val| val.as_ref().map(|t| self.substitute(t)))
+            .map(|val| val.as_ref().map(|t| self.substitute(*t)))
             .collect()
     }
 
-    fn follow_vars(&self, mut term: Term) -> Term {
+    fn follow_vars(&self, mut term: term_arena::TermId) -> (term_arena::TermId, term_arena::Term) {
         loop {
-            match term {
-                Term::Var(var) => {
+            match self.terms.get_term(term) {
+                term_arena::Term::Var(var) => {
                     if let Some(value) = &self.variables[var.0] {
-                        term = value.clone();
+                        term = *value;
                     } else {
-                        return Term::Var(var);
+                        return (term, term_arena::Term::Var(var));
                     }
                 }
-                term @ Term::App(_) => return term,
+                app @ term_arena::Term::App(_, _) => return (term, app),
             }
         }
     }
 
-    fn unify(&mut self, goal_term: Term, rule_term: Term) -> bool {
+    fn unify(&mut self, goal_term: term_arena::TermId, rule_term: term_arena::TermId) -> bool {
+        let (goal_term_id, goal_term) = self.follow_vars(goal_term);
+        let (rule_term_id, rule_term) = self.follow_vars(rule_term);
 
-        let goal_term = self.follow_vars(goal_term);
-        let rule_term = self.follow_vars(rule_term);
-
-
-        // we know that if any of the terms is a variable, it is not instantiated yet
         match (goal_term, rule_term) {
-            (Term::Var(goal_var), Term::Var(rule_var)) => {
+            (term_arena::Term::Var(goal_var), term_arena::Term::Var(rule_var)) => {
                 if goal_var != rule_var {
-                    self.set_var(rule_var, Term::Var(goal_var))
+                    self.set_var(rule_var, goal_term_id)
                 } else {
                     true
                 }
             }
-            (Term::Var(goal_var), rule_term @ Term::App(_)) => self.set_var(goal_var, rule_term),
-            (goal_term @ Term::App(_), Term::Var(rule_var)) => self.set_var(rule_var, goal_term),
-            (Term::App(goal_app), Term::App(rule_app)) => self.unify_app(goal_app, rule_app),
+            (term_arena::Term::Var(goal_var), term_arena::Term::App(_, _)) => {
+                self.set_var(goal_var, rule_term_id)
+            }
+            (term_arena::Term::App(_, _), term_arena::Term::Var(rule_var)) => {
+                self.set_var(rule_var, goal_term_id)
+            }
+            (
+                term_arena::Term::App(goal_func, goal_args),
+                term_arena::Term::App(rule_func, rule_args),
+            ) => {
+                if goal_func != rule_func {
+                    return false;
+                }
+                if goal_args.len() != rule_args.len() {
+                    return false;
+                }
+
+                goal_args.zip(rule_args).all(|(goal_arg, rule_arg)| {
+                    self.unify(self.terms.get_arg(goal_arg), self.terms.get_arg(rule_arg))
+                })
+            }
         }
     }
 
-    fn unify_app(&mut self, goal_term: AppTerm, rule_term: AppTerm) -> bool {
-        if goal_term.functor != rule_term.functor {
-            return false;
-        }
-        if goal_term.args.len() != rule_term.args.len() {
-            return false;
-        }
-
-        goal_term
-            .args
-            .into_iter()
-            .zip(rule_term.args.into_iter())
-            .all(|(goal_arg, rule_arg)| self.unify(goal_arg, rule_arg))
-    }
-
-    fn unify_rule(&mut self, goal_term: &AppTerm, rule: &Rule) -> Option<Vec<AppTerm>> {
+    fn unify_rule<'a>(
+        &'a mut self,
+        goal_term: term_arena::TermId,
+        rule: &'a CompiledRule,
+    ) -> Option<impl Iterator<Item = term_arena::TermId> + 'a> {
         // add uninstantiated variables for the rule
         let var_offset = self.variables.len();
-        let rule_vars = rule.max_var() + 1;
-        self.allocate_vars(rule_vars);
+        self.allocate_vars(rule.var_slots);
 
-        let instantiated_rule_head = rule.head.instantiate(var_offset);
+        let conv_rule_head = self.terms.instantiate(&rule.head_blueprint, var_offset);
+        let instantiated_rule_head = conv_rule_head(rule.head);
 
-        if self.unify_app(goal_term.clone(), instantiated_rule_head) {
-            Some(
-                rule.tail
-                    .iter()
-                    .map(|tail| tail.instantiate(var_offset))
-                    .collect(),
-            )
+        if self.unify(goal_term, instantiated_rule_head) {
+            let conv_rule_tail = self.terms.instantiate(&rule.tail_blueprint, var_offset);
+            Some(rule.tail.iter().map(move |tail| conv_rule_tail(*tail)))
         } else {
             None
         }
     }
+}
+
+fn instantiate(
+    arena: &mut TermArena,
+    scratch: &mut Vec<term_arena::TermId>,
+    term: &Term,
+    offset: usize,
+) -> term_arena::TermId {
+    match term {
+        Term::Var(v) => arena.var(Var(v.0 + offset)),
+        Term::App(app) => instantiate_app(arena, scratch, app, offset),
+    }
+}
+
+fn instantiate_app(
+    arena: &mut TermArena,
+    scratch: &mut Vec<term_arena::TermId>,
+    app: &AppTerm,
+    offset: usize,
+) -> term_arena::TermId {
+    let args_start = scratch.len();
+    for arg in &app.args {
+        let arg_term = instantiate(arena, scratch, arg, offset);
+        scratch.push(arg_term);
+    }
+    let out = arena.app(app.functor, &scratch[args_start..]);
+    scratch.truncate(args_start);
+    out
 }
 
 enum Step {
@@ -306,8 +374,10 @@ impl<'u> Solver<'u> {
     fn step(&mut self) -> Step {
         if let Some(goal) = self.unresolved_goals.pop() {
             // resolve goal
-
-            let goal_sym = &self.universe.symbols[goal.functor.0];
+            let goal_sym = match self.solution.terms.get_term(goal) {
+                term_arena::Term::Var(_) => unreachable!(),
+                term_arena::Term::App(functor, _) => &self.universe.symbols[functor.0],
+            };
 
             // store alternatives in reverse order so that we can `pop` and still process
             // them in the original order
@@ -342,10 +412,12 @@ impl<'u> Solver<'u> {
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
         while let Some(current) = checkpoint.alternatives.pop() {
-            if let Some(goals) = self.solution.unify_rule(&checkpoint.goal, &current) {
+            let result = self.solution.unify_rule(checkpoint.goal, &current);
+            if let Some(goals) = result {
                 self.unresolved_goals.extend(goals);
                 return true;
             } else {
+                drop(result);
                 self.solution.restore(&checkpoint.solution_checkpoint);
             }
         }

@@ -3,16 +3,12 @@ use std::ops::Range;
 use crate::{Sym, Var};
 
 
-pub struct Solver {
-
-}
-
-
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(transparent)]
 pub struct TermId(usize);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[repr(transparent)]
 pub struct ArgId(usize);
 
 #[derive(Debug)]

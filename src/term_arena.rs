@@ -81,6 +81,13 @@ impl Iterator for ArgRange {
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(ArgId)
     }
+
+    fn any<F>(&mut self, mut f: F) -> bool
+    where
+            Self: Sized,
+            F: FnMut(Self::Item) -> bool, {
+        self.0.any(move |x| f(ArgId(x)))
+    }
 }
 
 impl ArgRange {

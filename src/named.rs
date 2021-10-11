@@ -1,13 +1,19 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
-use crate::{Rule, Solver, Sym, Universe, Var, term::{AppTerm, Term}};
+use crate::{
+    term::{AppTerm, Term},
+    Rule, Solver, Sym, Universe, Var,
+};
 
-
+#[derive(Debug)]
 pub struct NamedUniverse {
     names: HashMap<String, Sym>,
     syms: HashMap<Sym, String>,
     universe: Universe,
 }
+
+#[derive(Debug)]
+pub struct ParseError;
 
 impl NamedUniverse {
     pub fn new() -> Self {
@@ -29,31 +35,31 @@ impl NamedUniverse {
         }
     }
 
-    pub fn term<'a>(&mut self, term: &'a str) -> Option<Term> {
+    pub fn term<'a>(&mut self, term: &'a str) -> Result<Term, ParseError> {
         self.parse_term(term).map(|(t, _)| t)
     }
 
-    pub fn fact(&mut self, term: &str) -> bool {
-        if let Some(Term::App(term)) = self.term(term) {
+    pub fn fact(&mut self, term: &str) -> Result<(), ParseError> {
+        if let Term::App(term) = self.term(term)? {
             self.universe.add_rule(Rule {
                 head: term,
                 tail: vec![],
             });
-            true
+            Ok(())
         } else {
-            false
+            Err(ParseError)
         }
     }
 
-    pub fn rule(&mut self, head: &str, tail: &[&str]) -> bool {
-        if let Some(Term::App(term)) = self.term(head) {
+    pub fn rule(&mut self, head: &str, tail: &[&str]) -> Result<(), ParseError> {
+        if let Term::App(term) = self.term(head)? {
             let mut args = Vec::new();
 
             for arg in tail {
-                if let Some(Term::App(arg)) = self.term(arg) {
+                if let Term::App(arg) = self.term(arg)? {
                     args.push(arg)
                 } else {
-                    return false
+                    return Err(ParseError);
                 }
             }
 
@@ -61,41 +67,50 @@ impl NamedUniverse {
                 head: term,
                 tail: args,
             });
-            true
+            Ok(())
         } else {
-            false
+            return Err(ParseError);
         }
     }
 
-    pub fn query(&mut self, goals_str: &[&str]) -> Option<Solver> {
+    pub fn query(&mut self, goals_str: &[&str]) -> Result<Solver, ParseError> {
+        let goals = self.parse_query(goals_str)?;
+        Ok(self.universe.query(goals))
+    }
+
+    pub fn parse_query(&mut self, goals_str: &[&str]) -> Result<Vec<AppTerm>, ParseError> {
         let mut goals = Vec::new();
 
         for goal in goals_str {
-            if let Some(Term::App(arg)) = self.term(goal) {
+            if let Term::App(arg) = self.term(goal)? {
                 goals.push(arg)
             } else {
-                return None
+                return Err(ParseError);
             }
         }
 
-        Some(self.universe.query(goals))
+        Ok(goals)
     }
 
-    fn parse_term<'a>(&mut self, term: &'a str) -> Option<(Term, &'a str)> {
+    fn parse_term<'a>(&mut self, term: &'a str) -> Result<(Term, &'a str), ParseError> {
         let mut chars = term.char_indices();
 
         match chars.next() {
             Some((_, '$')) => {
                 // variable
-                let (num_part, rest) = if let Some((last, _)) = chars.find(|(_, ch)| ! ch.is_ascii_digit()) {
-                    (&term[1..last], &term[last..])
-                } else {
-                    (&term[1..], "")
-                };
-                Some((Term::Var(Var(num_part.parse().ok()?)), rest))
-            },
-            Some((_, ch)) if ch.is_alphabetic() => {
-                if let Some((last, ch)) = chars.find(|(_, ch)| !ch.is_alphabetic()) {
+                let (num_part, rest) =
+                    if let Some((last, _)) = chars.find(|(_, ch)| !ch.is_ascii_digit()) {
+                        (&term[1..last], &term[last..])
+                    } else {
+                        (&term[1..], "")
+                    };
+                Ok((
+                    Term::Var(Var(num_part.parse().map_err(|_| ParseError)?)),
+                    rest,
+                ))
+            }
+            Some((_, ch)) if ch.is_alphanumeric() || ch == '_' => {
+                if let Some((last, ch)) = chars.find(|(_, ch)| !ch.is_alphabetic() && *ch != '_') {
                     // not all alphabetic, compound term
                     let sym = self.symbol(&term[..last]);
                     let mut args = Vec::new();
@@ -108,32 +123,36 @@ impl NamedUniverse {
                             let mut remaining_chars = remaining.chars();
                             match remaining_chars.next() {
                                 Some(',') => {
-                                    let (next_arg, next_remaining) = self.parse_term(remaining_chars.as_str())?;
+                                    let (next_arg, next_remaining) =
+                                        self.parse_term(remaining_chars.as_str())?;
                                     args.push(next_arg);
                                     remaining = next_remaining;
                                 }
                                 Some(')') => {
-                                    return Some((
+                                    return Ok((
                                         Term::App(AppTerm { functor: sym, args }),
                                         remaining_chars.as_str(),
                                     ))
                                 }
-                                _ => return None,
+                                _ => return Err(ParseError),
                             }
                         }
                     } else {
-                        return Some((
-                            Term::App(AppTerm { functor: sym, args }),
-                            &term[last..],
-                        ))
+                        return Ok((Term::App(AppTerm { functor: sym, args }), &term[last..]));
                     }
                 } else {
                     // all alphabetic, simple term
                     let sym = self.symbol(term);
-                    Some((Term::App(AppTerm { functor: sym, args: Vec::new() }), ""))
+                    Ok((
+                        Term::App(AppTerm {
+                            functor: sym,
+                            args: Vec::new(),
+                        }),
+                        "",
+                    ))
                 }
             }
-            _ => None,
+            _ => Err(ParseError),
         }
     }
 
@@ -150,7 +169,11 @@ impl NamedUniverse {
         }
     }
 
-    pub fn pretty_app<W: std::fmt::Write>(&self, writer: &mut W, term: &AppTerm) -> std::fmt::Result {
+    pub fn pretty_app<W: std::fmt::Write>(
+        &self,
+        writer: &mut W,
+        term: &AppTerm,
+    ) -> std::fmt::Result {
         if let Some(name) = &self.syms.get(&term.functor) {
             write!(writer, "{}", name)?;
         } else {
@@ -174,6 +197,10 @@ impl NamedUniverse {
 
     pub fn inner_mut(&mut self) -> &mut Universe {
         &mut self.universe
+    }
+
+    pub fn inner(&self) -> &Universe {
+        &self.universe
     }
 }
 

@@ -5,29 +5,29 @@ use std::time::Instant;
 fn main() {
     let mut u = logru::named::NamedUniverse::new();
 
-    u.fact("exists($0,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("exists($1,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("exists($2,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("exists($3,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("exists($4,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
+    u.fact("exists($0,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("exists($1,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("exists($2,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("exists($3,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("exists($4,list($0,$1,$2,$3,$4))").unwrap();
 
-    u.fact("rightOf($1,$0,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("rightOf($2,$1,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("rightOf($3,$2,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("rightOf($4,$3,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
+    u.fact("rightOf($1,$0,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("rightOf($2,$1,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("rightOf($3,$2,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("rightOf($4,$3,list($0,$1,$2,$3,$4))").unwrap();
 
-    u.fact("middle($2,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
+    u.fact("middle($2,list($0,$1,$2,$3,$4))").unwrap();
 
-    u.fact("first($0,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
+    u.fact("first($0,list($0,$1,$2,$3,$4))").unwrap();
 
-    u.fact("nextTo($1,$0,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("nextTo($2,$1,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("nextTo($3,$2,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("nextTo($4,$3,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("nextTo($0,$1,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("nextTo($1,$2,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("nextTo($2,$3,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
-    u.fact("nextTo($3,$4,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
+    u.fact("nextTo($1,$0,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("nextTo($2,$1,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("nextTo($3,$2,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("nextTo($4,$3,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("nextTo($0,$1,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("nextTo($1,$2,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("nextTo($2,$3,list($0,$1,$2,$3,$4))").unwrap();
+    u.fact("nextTo($3,$4,list($0,$1,$2,$3,$4))").unwrap();
 
     u.rule(
         "puzzle($0)",
@@ -48,8 +48,9 @@ fn main() {
             "nextTo(house($53,$54,$55,diplomat,$56),house($57,$58,$59,$60,horse),$0)",
             "exists(house($61,$62,water,$63,$64),$0)",
             "exists(house($65,$66,$67,$68,zebra),$0)",
-        ]
-    ).then(|| ()).unwrap();
+        ],
+    )
+    .unwrap();
 
     let mut solver = u.query(&["puzzle($0)"]).unwrap();
     let before = Instant::now();

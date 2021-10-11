@@ -546,7 +546,7 @@ mod test {
             ])]
         }));
         assert_eq!(
-            solver.take(3).collect::<Vec<_>>(),
+            solver.collect::<Vec<_>>(),
             vec![vec![Some(
                 s.apply(vec![s.apply(vec![s.apply(vec![z.into()]).into()]).into()])
                     .into()
@@ -563,7 +563,7 @@ mod test {
             ])]
         }));
         assert_eq!(
-            solver.take(3).collect::<Vec<_>>(),
+            solver.collect::<Vec<_>>(),
             vec![vec![Some(s.apply(vec![z.into()]).into())],]
         );
     }

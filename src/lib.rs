@@ -173,9 +173,7 @@ impl SolutionState {
     fn set_var(&mut self, var: Var, value: Term) -> bool {
         assert!(self.variables[var.0].is_none());
 
-        // TODO: optimize here
-        if value.vars().find(|term_var| *term_var == var).is_some() {
-            // occurs check failed
+        if value.occurs(var) {
             return false;
         }
 

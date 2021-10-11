@@ -41,11 +41,9 @@ impl NamedUniverse {
 
     pub fn fact(&mut self, term: &str) -> Result<(), ParseError> {
         if let Term::App(term) = self.term(term)? {
-            let var_slots = term.count_var_slots();
             self.universe.add_rule(Rule {
                 head: term,
                 tail: vec![],
-                var_slots,
             });
             Ok(())
         } else {
@@ -65,16 +63,9 @@ impl NamedUniverse {
                 }
             }
 
-            let var_slots = args
-                .iter()
-                .map(|a| a.count_var_slots())
-                .max()
-                .unwrap_or(0)
-                .max(term.count_var_slots());
             self.universe.add_rule(Rule {
                 head: term,
                 tail: args,
-                var_slots,
             });
             Ok(())
         } else {

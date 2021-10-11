@@ -35,7 +35,9 @@ impl Universe {
 
     pub fn add_rule(&mut self, rule: Rule) {
         // define rule
-        self.symbols[rule.head.functor.0].definitions.push(rule);
+        self.symbols[rule.head.functor.0]
+            .definitions
+            .push(rule.compile());
     }
 
     pub fn query(&self, goals: Vec<AppTerm>) -> Solver {
@@ -50,12 +52,14 @@ impl Universe {
 
         let mut solution = SolutionState::new(max_var);
 
+        let mut scratch = Vec::new();
+
         // initialize solver
         Solver {
             universe: self,
             unresolved_goals: goals
                 .iter()
-                .map(|app| solution.instantiate_app(app, 0))
+                .map(|app| instantiate_app(&mut solution.terms, &mut scratch, &app, 0))
                 .collect(),
             checkpoints: vec![],
             solution,
@@ -85,7 +89,7 @@ pub fn quantify<R, const N: usize>(f: impl FnOnce([Var; N]) -> R) -> R {
 
 #[derive(Debug)]
 struct SymInfo {
-    definitions: Vec<Rule>,
+    definitions: Vec<CompiledRule>,
 }
 
 impl SymInfo {
@@ -96,11 +100,19 @@ impl SymInfo {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CompiledRule {
+    head_blueprint: TermArena,
+    head: term_arena::TermId,
+    tail_blueprint: TermArena,
+    tail: Vec<term_arena::TermId>,
+    var_slots: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule {
     head: AppTerm,
     tail: Vec<AppTerm>,
-    var_slots: usize,
 }
 
 impl Rule {
@@ -109,12 +121,7 @@ impl Rule {
             functor: pred,
             args,
         };
-        let var_slots = head.count_var_slots();
-        Self {
-            head,
-            tail: vec![],
-            var_slots,
-        }
+        Self { head, tail: vec![] }
     }
 
     pub fn when(mut self, pred: Sym, args: Vec<Term>) -> Self {
@@ -122,9 +129,33 @@ impl Rule {
             functor: pred,
             args,
         };
-        self.var_slots = self.var_slots.max(app_term.count_var_slots());
         self.tail.push(app_term.into());
         self
+    }
+
+    pub fn compile(&self) -> CompiledRule {
+        let mut scratch = Vec::new();
+        let mut head_blueprint = TermArena::new();
+        let mut tail_blueprint = TermArena::new();
+        let head = instantiate_app(&mut head_blueprint, &mut scratch, &self.head, 0);
+        let tail = self
+            .tail
+            .iter()
+            .map(|tail| instantiate_app(&mut tail_blueprint, &mut scratch, tail, 0))
+            .collect();
+        CompiledRule {
+            head_blueprint,
+            head,
+            tail_blueprint,
+            tail,
+            var_slots: self.head.count_var_slots().max(
+                self.tail
+                    .iter()
+                    .map(|tail| tail.count_var_slots())
+                    .max()
+                    .unwrap_or(0),
+            ),
+        }
     }
 }
 
@@ -137,7 +168,7 @@ pub struct Solver<'u> {
 
 struct Checkpoint<'u> {
     goal: term_arena::TermId,
-    alternatives: Vec<&'u Rule>,
+    alternatives: Vec<&'u CompiledRule>,
     goals_checkpoint: usize,
     solution_checkpoint: SolutionCheckpoint,
 }
@@ -147,7 +178,6 @@ struct SolutionState {
     assignments: Vec<Var>,
     goal_vars: usize,
     terms: TermArena,
-    instantiate_scratch: Vec<term_arena::TermId>,
 }
 
 struct SolutionCheckpoint {
@@ -163,7 +193,6 @@ impl SolutionState {
             variables: vec![None; goal_vars],
             goal_vars: goal_vars,
             terms: TermArena::new(),
-            instantiate_scratch: vec![],
         }
     }
 
@@ -172,7 +201,7 @@ impl SolutionState {
     }
 
     fn set_var(&mut self, var: Var, value: term_arena::TermId) -> bool {
-        assert!(self.variables[var.0].is_none());
+        debug_assert!(self.variables[var.0].is_none());
 
         if self.occurs(var, value) {
             return false;
@@ -289,44 +318,50 @@ impl SolutionState {
     fn unify_rule<'a>(
         &'a mut self,
         goal_term: term_arena::TermId,
-        rule: &'a Rule,
+        rule: &'a CompiledRule,
     ) -> Option<impl Iterator<Item = term_arena::TermId> + 'a> {
         // add uninstantiated variables for the rule
         let var_offset = self.variables.len();
         self.allocate_vars(rule.var_slots);
 
-        let instantiated_rule_head = self.instantiate_app(&rule.head, var_offset);
+        let conv_rule_head = self.terms.instantiate(&rule.head_blueprint, var_offset);
+        let instantiated_rule_head = conv_rule_head(rule.head);
 
         if self.unify(goal_term, instantiated_rule_head) {
-            Some(
-                rule.tail
-                    .iter()
-                    .map(move |tail| self.instantiate_app(tail, var_offset)),
-            )
+            let conv_rule_tail = self.terms.instantiate(&rule.tail_blueprint, var_offset);
+            Some(rule.tail.iter().map(move |tail| conv_rule_tail(*tail)))
         } else {
             None
         }
     }
+}
 
-    fn instantiate(&mut self, term: &Term, offset: usize) -> term_arena::TermId {
-        match term {
-            Term::Var(v) => self.terms.var(Var(v.0 + offset)),
-            Term::App(app) => self.instantiate_app(app, offset),
-        }
+fn instantiate(
+    arena: &mut TermArena,
+    scratch: &mut Vec<term_arena::TermId>,
+    term: &Term,
+    offset: usize,
+) -> term_arena::TermId {
+    match term {
+        Term::Var(v) => arena.var(Var(v.0 + offset)),
+        Term::App(app) => instantiate_app(arena, scratch, app, offset),
     }
+}
 
-    fn instantiate_app(&mut self, app: &AppTerm, offset: usize) -> term_arena::TermId {
-        let args_start = self.instantiate_scratch.len();
-        for arg in &app.args {
-            let arg_term = self.instantiate(arg, offset);
-            self.instantiate_scratch.push(arg_term);
-        }
-        let out = self
-            .terms
-            .app(app.functor, &self.instantiate_scratch[args_start..]);
-        self.instantiate_scratch.truncate(args_start);
-        out
+fn instantiate_app(
+    arena: &mut TermArena,
+    scratch: &mut Vec<term_arena::TermId>,
+    app: &AppTerm,
+    offset: usize,
+) -> term_arena::TermId {
+    let args_start = scratch.len();
+    for arg in &app.args {
+        let arg_term = instantiate(arena, scratch, arg, offset);
+        scratch.push(arg_term);
     }
+    let out = arena.app(app.functor, &scratch[args_start..]);
+    scratch.truncate(args_start);
+    out
 }
 
 enum Step {

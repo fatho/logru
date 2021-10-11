@@ -9,7 +9,7 @@ pub struct TermId(usize);
 #[repr(transparent)]
 pub struct ArgId(usize);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TermArena {
     terms: Vec<Term>,
     args: Vec<TermId>,
@@ -38,6 +38,21 @@ impl TermArena {
 
     pub fn atom(&mut self, atom: Sym) -> TermId {
         self.app(atom, &[])
+    }
+
+    pub fn instantiate(&mut self, blueprint: &TermArena, var_offset: usize) -> impl Fn(TermId) -> TermId {
+        let here = self.checkpoint();
+        self.terms.extend(blueprint.terms.iter().map(|term| match term {
+            Term::Var(var) => Term::Var(Var(var.0 + var_offset)),
+            Term::App(func, args) => Term::App(*func, ArgRange {
+                start: args.start + here.args,
+                end: args.end + here.args,
+            }),
+        }));
+        self.args.extend(blueprint.args.iter().map(|term_id| TermId(term_id.0 + here.terms)));
+
+        let term_offset = here.terms;
+        move |TermId(old)| TermId(old + term_offset)
     }
 
 

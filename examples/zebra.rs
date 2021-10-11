@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 //use logru::zebra;
 
 fn main() {
@@ -50,7 +52,9 @@ fn main() {
     ).then(|| ()).unwrap();
 
     let mut solver = u.query(&["puzzle($0)"]).unwrap();
+    let before = Instant::now();
     let solution = solver.next().unwrap();
+    let duration = before.elapsed();
 
     for var in solution {
         if let Some(term) = var {
@@ -59,4 +63,5 @@ fn main() {
             println!("<bug: no solution>");
         }
     }
+    println!("Took {:.3}s", duration.as_secs_f64());
 }

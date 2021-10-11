@@ -1,5 +1,5 @@
-pub mod term_arena;
 pub mod term;
+pub mod term_arena;
 pub mod union_find;
 pub mod zebra;
 
@@ -151,6 +151,7 @@ struct Checkpoint<'u> {
 struct SolutionState {
     variables: Vec<Option<Term>>,
     operations: Vec<SolverOp>,
+    goal_vars: usize,
 }
 
 struct SolutionCheckpoint {
@@ -163,6 +164,7 @@ impl SolutionState {
         Self {
             operations: vec![],
             variables: vec![None; goal_vars],
+            goal_vars: goal_vars,
         }
     }
 
@@ -194,7 +196,11 @@ impl SolutionState {
     }
 
     fn restore(&mut self, checkpoint: &SolutionCheckpoint) {
-        for op in self.operations.drain(checkpoint.operations_checkpoint..).rev() {
+        for op in self
+            .operations
+            .drain(checkpoint.operations_checkpoint..)
+            .rev()
+        {
             match op {
                 SolverOp::AssignedVar(var) => self.variables[var.0] = None,
             }
@@ -202,17 +208,45 @@ impl SolutionState {
         self.variables.truncate(checkpoint.variables_checkpoint);
     }
 
-    //fn subst(&mut self, term: &Term)
+    fn substitute(&self, term: &Term) -> Term {
+        match term {
+            Term::Var(v) => {
+                if let Some(value) = &self.variables[v.0] {
+                    self.substitute(value)
+                } else {
+                    Term::Var(*v)
+                }
+            }
+            Term::App(app) => Term::App(self.substitute_app(app)),
+        }
+    }
+
+    fn substitute_app(&self, term: &AppTerm) -> AppTerm {
+        AppTerm {
+            functor: term.functor,
+            args: term.args.iter().map(|t| self.substitute(t)).collect(),
+        }
+    }
+
+    fn get_solution(&self) -> Vec<Option<Term>> {
+        self.variables
+            .iter()
+            .take(self.goal_vars)
+            .map(|val| val.as_ref().map(|t| self.substitute(t)))
+            .collect()
+    }
 
     fn follow_vars(&self, mut term: Term) -> Term {
         loop {
             match term {
-                Term::Var(var) => if let Some(value) = &self.variables[var.0] {
-                    term = value.clone();
-                } else {
-                    return Term::Var(var);
-                },
-                term@Term::App(_) => return term,
+                Term::Var(var) => {
+                    if let Some(value) = &self.variables[var.0] {
+                        term = value.clone();
+                    } else {
+                        return Term::Var(var);
+                    }
+                }
+                term @ Term::App(_) => return term,
             }
         }
     }
@@ -227,20 +261,16 @@ impl SolutionState {
 
         // we know that if any of the terms is a variable, it is not instantiated yet
         match (goal_term, rule_term) {
-            (Term::Var(goal_var), Term::Var(rule_var)) => if goal_var != rule_var {
-                self.set_var(rule_var, Term::Var(goal_var))
-            } else {
-                true
-            },
-            (Term::Var(goal_var), rule_term@Term::App(_)) => {
-                self.set_var(goal_var, rule_term)
-            },
-            (goal_term@Term::App(_), Term::Var(rule_var)) =>{
-                self.set_var(rule_var, goal_term)
+            (Term::Var(goal_var), Term::Var(rule_var)) => {
+                if goal_var != rule_var {
+                    self.set_var(rule_var, Term::Var(goal_var))
+                } else {
+                    true
+                }
             }
-            (Term::App(goal_app), Term::App(rule_app)) => {
-                self.unify_app(goal_app, rule_app)
-            }
+            (Term::Var(goal_var), rule_term @ Term::App(_)) => self.set_var(goal_var, rule_term),
+            (goal_term @ Term::App(_), Term::Var(rule_var)) => self.set_var(rule_var, goal_term),
+            (Term::App(goal_app), Term::App(rule_app)) => self.unify_app(goal_app, rule_app),
         }
     }
 
@@ -271,7 +301,12 @@ impl SolutionState {
         let instantiated_rule_head = rule.head.instantiate(var_offset);
 
         if self.unify_app(goal_term.clone(), instantiated_rule_head) {
-            Some(rule.tail.iter().map(|tail| tail.instantiate(var_offset)).collect())
+            Some(
+                rule.tail
+                    .iter()
+                    .map(|tail| tail.instantiate(var_offset))
+                    .collect(),
+            )
         } else {
             None
         }
@@ -306,13 +341,16 @@ impl<'u> Solver<'u> {
         if self.backtrack_resume() {
             // Found a choice to commit to
             if self.unresolved_goals.is_empty() {
+                trace!("No additional goals, found a solution");
                 // If no goals remain, we are done
                 Step::Yield
             } else {
+                trace!("More goals, please continue");
                 // Otherwise, rinse & repeat with remaining goals
                 Step::Continue
             }
         } else {
+            trace!("No more choices, done");
             // couldn't backtrack to any possible choice, we're done
             Step::Done
         }
@@ -320,7 +358,10 @@ impl<'u> Solver<'u> {
 
     /// Try the next alternative of the top-most checkpoint
     fn resume_checkpoint(&mut self) -> bool {
-        let checkpoint = self.checkpoints.last_mut().expect("invariant: there is always a checkpoint when this is called");
+        let checkpoint = self
+            .checkpoints
+            .last_mut()
+            .expect("invariant: there is always a checkpoint when this is called");
         trace!("resuming checkpoint {:?}", checkpoint.goal);
         while let Some(current) = checkpoint.alternatives.pop() {
             trace!("evaluating alternative {:?}", current.head);
@@ -333,8 +374,9 @@ impl<'u> Solver<'u> {
                 self.solution.restore(&checkpoint.solution_checkpoint);
             }
         }
-        // checkpoint exhausted, discard
-        self.checkpoints.pop();
+        // checkpoint exhausted, put goal back and discard
+        let discarded = self.checkpoints.pop().expect("we know there is one here");
+        self.unresolved_goals.push(discarded.goal);
         false
     }
 
@@ -362,7 +404,7 @@ impl<'u> Iterator for Solver<'u> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.step() {
-                Step::Yield => break Some(self.solution.variables.clone()),
+                Step::Yield => break Some(self.solution.get_solution()),
                 Step::Continue => continue,
                 Step::Done => break None,
             }
@@ -373,21 +415,9 @@ impl<'u> Iterator for Solver<'u> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tracing_subscriber;
-
-    // pub enum List {
-    //     Nil,
-    //     Cons(Var<List>, Var<List>),
-    // }
-
-    // pub enum Preds {
-    //     Append,
-    //     IsNull,
-    // }
 
     #[test]
-    fn usage() {
-        tracing_subscriber::fmt::init();
+    fn genealogy() {
         // GOAL:
         /*
 
@@ -410,6 +440,7 @@ mod test {
         let carol = u.new_symbol();
         let dave = u.new_symbol();
         let eve = u.new_symbol();
+        let faithe = u.new_symbol();
 
         let parent = u.new_symbol();
         let grandparent = u.new_symbol();
@@ -420,6 +451,9 @@ mod test {
 
         u.add_rule(Rule::fact(parent, vec![carol.into(), eve.into()]));
         u.add_rule(Rule::fact(parent, vec![dave.into(), eve.into()]));
+
+        u.add_rule(Rule::fact(parent, vec![carol.into(), faithe.into()]));
+        u.add_rule(Rule::fact(parent, vec![dave.into(), faithe.into()]));
 
         u.add_rule(quantify(|[p, q, r]| {
             Rule::fact(grandparent, vec![p.into(), r.into()])
@@ -433,13 +467,130 @@ mod test {
                 .when(parent, vec![p.into(), c2.into()])
         }));
 
+        // query all known grandparents of eve
         let solver = u.query(quantify(|[x]| {
             vec![grandparent.apply(vec![x.into(), eve.into()])]
         }));
-        for solution in solver {
-            println!("{:?}", solution);
-        }
+        assert_eq!(
+            solver.collect::<Vec<_>>(),
+            vec![vec![Some(alice.into())], vec![Some(bob.into())],]
+        );
 
-        panic!()
+        // query all grandchildren of bob
+        let solver = u.query(quantify(|[x]| {
+            vec![grandparent.apply(vec![bob.into(), x.into()])]
+        }));
+        assert_eq!(
+            solver.collect::<Vec<_>>(),
+            vec![vec![Some(eve.into())], vec![Some(faithe.into())],]
+        );
+
+        // query all siblings of eve
+        let solver = u.query(quantify(|[x]| {
+            vec![siblings.apply(vec![eve.into(), x.into()])]
+        }));
+        assert_eq!(
+            solver.collect::<Vec<_>>(),
+            vec![
+                // one solution for each path taken
+                vec![Some(eve.into())],
+                vec![Some(eve.into())],
+                vec![Some(faithe.into())],
+                vec![Some(faithe.into())],
+            ]
+        );
+    }
+
+    #[test]
+    fn arithmetic() {
+        // GOAL:
+        /*
+
+        is_natural(z).
+        is_natural(s(X)) :- is_natural(X).
+
+        is_zero(z).
+
+        add(X, z, X) :- is_natural(X).
+        add(X, S(Y), S(Z)) :- add(X, Y, Z).
+
+        */
+
+        let mut u = Universe::new();
+
+        let s = u.new_symbol();
+        let z = u.new_symbol();
+
+        let is_natural = u.new_symbol();
+        let is_zero = u.new_symbol();
+        let add = u.new_symbol();
+
+        u.add_rule(Rule::fact(is_zero, vec![z.into()]));
+        u.add_rule(Rule::fact(is_natural, vec![z.into()]));
+
+        u.add_rule(quantify(|[x]| {
+            Rule::fact(is_natural, vec![s.apply(vec![x.into()]).into()])
+                .when(is_natural, vec![x.into()])
+        }));
+
+        u.add_rule(quantify(|[x]| {
+            Rule::fact(add, vec![x.into(), z.into(), x.into()]).when(is_natural, vec![x.into()])
+        }));
+        u.add_rule(quantify(|[x, y, z]| {
+            Rule::fact(
+                add,
+                vec![
+                    x.into(),
+                    s.apply(vec![y.into()]).into(),
+                    s.apply(vec![z.into()]).into(),
+                ],
+            )
+            .when(add, vec![x.into(), y.into(), z.into()])
+        }));
+
+        // query all zero numbers
+        let solver = u.query(quantify(|[x]| vec![is_zero.apply(vec![x.into()])]));
+        assert_eq!(solver.collect::<Vec<_>>(), vec![vec![Some(z.into())],]);
+
+        // query the first natural numbers
+        let solver = u.query(quantify(|[x]| vec![is_natural.apply(vec![x.into()])]));
+        assert_eq!(
+            solver.take(3).collect::<Vec<_>>(),
+            vec![
+                vec![Some(z.into())],
+                vec![Some(s.apply(vec![z.into()]).into())],
+                vec![Some(s.apply(vec![s.apply(vec![z.into()]).into()]).into())],
+            ]
+        );
+
+        // compute 2 + 1
+        let solver = u.query(quantify(|[x]| {
+            vec![add.apply(vec![
+                s.apply(vec![s.apply(vec![z.into()]).into()]).into(),
+                s.apply(vec![z.into()]).into(),
+                x.into(),
+            ])]
+        }));
+        assert_eq!(
+            solver.take(3).collect::<Vec<_>>(),
+            vec![vec![Some(
+                s.apply(vec![s.apply(vec![s.apply(vec![z.into()]).into()]).into()])
+                    .into()
+            )],]
+        );
+
+        // compute 3 - 2
+        let solver = u.query(quantify(|[x]| {
+            vec![add.apply(vec![
+                x.into(),
+                s.apply(vec![s.apply(vec![z.into()]).into()]).into(),
+                s.apply(vec![s.apply(vec![s.apply(vec![z.into()]).into()]).into()])
+                    .into(),
+            ])]
+        }));
+        assert_eq!(
+            solver.take(3).collect::<Vec<_>>(),
+            vec![vec![Some(s.apply(vec![z.into()]).into())],]
+        );
     }
 }

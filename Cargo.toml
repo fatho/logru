@@ -15,5 +15,5 @@ tracing-subscriber = "0.2.25"
 debug = true
 
 [[bench]]
-name = "zebra"
+name = "criterion"
 harness = false

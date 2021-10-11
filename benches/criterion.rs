@@ -1,12 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use logru::named::NamedUniverse;
 
-fn zebra(u: &mut NamedUniverse) -> bool {
-    let mut solver = u.query(&["puzzle($0)"]).unwrap();
-    solver.next().is_some()
-}
-
-fn criterion_benchmark(c: &mut Criterion) {
+fn prepare_zebra() -> NamedUniverse {
     let mut u = NamedUniverse::new();
 
     u.fact("exists($0,list($0,$1,$2,$3,$4))").then(|| ()).unwrap();
@@ -54,8 +49,18 @@ fn criterion_benchmark(c: &mut Criterion) {
             "exists(house($65,$66,$67,$68,zebra),$0)",
         ]
     ).then(|| ()).unwrap();
+    u
+}
 
-    c.bench_function("zebra", |b| b.iter(|| zebra(&mut u)));
+fn zebra(u: &mut NamedUniverse) -> bool {
+    let mut solver = u.query(&["puzzle($0)"]).unwrap();
+    solver.next().is_some()
+}
+
+fn criterion_benchmark(c: &mut Criterion) {
+    let mut zebra_universe = prepare_zebra();
+
+    c.bench_function("zebra", |b| b.iter(|| zebra(&mut zebra_universe)));
 }
 
 criterion_group!(benches, criterion_benchmark);

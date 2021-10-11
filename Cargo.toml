@@ -13,3 +13,7 @@ tracing-subscriber = "0.2.25"
 
 [profile.release]
 debug = true
+
+[[bench]]
+name = "zebra"
+harness = false

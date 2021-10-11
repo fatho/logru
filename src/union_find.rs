@@ -1,5 +1,5 @@
-use std::vec::Vec;
 use std::cell::Cell;
+use std::vec::Vec;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct Set(usize);
@@ -7,21 +7,21 @@ pub struct Set(usize);
 #[derive(Debug, Clone)]
 pub struct UnionFind {
     parent: Vec<Cell<Set>>,
-    rank: Vec<usize>
+    rank: Vec<usize>,
 }
 
 impl UnionFind {
     pub fn new() -> Self {
         UnionFind {
             parent: Vec::new(),
-            rank: Vec::new()
+            rank: Vec::new(),
         }
     }
 
     pub fn with_capacity(num_variables: usize) -> Self {
         UnionFind {
             parent: Vec::with_capacity(num_variables),
-            rank: Vec::with_capacity(num_variables)
+            rank: Vec::with_capacity(num_variables),
         }
     }
 
@@ -63,3 +63,8 @@ impl UnionFind {
     }
 }
 
+impl Default for UnionFind {
+    fn default() -> Self {
+        Self::new()
+    }
+}

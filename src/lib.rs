@@ -1,9 +1,7 @@
 pub mod term;
 pub mod term_arena;
 pub mod union_find;
-pub mod zebra;
-
-use tracing::trace;
+pub mod named;
 
 use term::*;
 
@@ -175,12 +173,11 @@ impl SolutionState {
     fn set_var(&mut self, var: Var, value: Term) -> bool {
         assert!(self.variables[var.0].is_none());
 
+        // TODO: optimize here
         if value.vars().find(|term_var| *term_var == var).is_some() {
             // occurs check failed
             return false;
         }
-
-        trace!("assigning {:?} to {:?}", var, value);
 
         self.variables[var.0] = Some(value);
         self.operations.push(SolverOp::AssignedVar(var));
@@ -252,12 +249,10 @@ impl SolutionState {
     }
 
     fn unify(&mut self, goal_term: Term, rule_term: Term) -> bool {
-        trace!("resolving terms {:?} and {:?}", goal_term, rule_term);
 
         let goal_term = self.follow_vars(goal_term);
         let rule_term = self.follow_vars(rule_term);
 
-        trace!("unifying {:?} with {:?}", goal_term, rule_term);
 
         // we know that if any of the terms is a variable, it is not instantiated yet
         match (goal_term, rule_term) {
@@ -275,7 +270,6 @@ impl SolutionState {
     }
 
     fn unify_app(&mut self, goal_term: AppTerm, rule_term: AppTerm) -> bool {
-        trace!("unifying {:?} with {:?}", goal_term, rule_term);
         if goal_term.functor != rule_term.functor {
             return false;
         }
@@ -294,10 +288,8 @@ impl SolutionState {
         // add uninstantiated variables for the rule
         let var_offset = self.variables.len();
         let rule_vars = rule.max_var() + 1;
-        trace!("rule needs {} additional variables", rule_vars);
         self.allocate_vars(rule_vars);
 
-        trace!("instantiating rule at {}", var_offset);
         let instantiated_rule_head = rule.head.instantiate(var_offset);
 
         if self.unify_app(goal_term.clone(), instantiated_rule_head) {
@@ -323,7 +315,6 @@ impl<'u> Solver<'u> {
     fn step(&mut self) -> Step {
         if let Some(goal) = self.unresolved_goals.pop() {
             // resolve goal
-            trace!("Resolving {:?}", goal);
 
             let goal_sym = &self.universe.symbols[goal.functor.0];
 
@@ -341,16 +332,13 @@ impl<'u> Solver<'u> {
         if self.backtrack_resume() {
             // Found a choice to commit to
             if self.unresolved_goals.is_empty() {
-                trace!("No additional goals, found a solution");
                 // If no goals remain, we are done
                 Step::Yield
             } else {
-                trace!("More goals, please continue");
                 // Otherwise, rinse & repeat with remaining goals
                 Step::Continue
             }
         } else {
-            trace!("No more choices, done");
             // couldn't backtrack to any possible choice, we're done
             Step::Done
         }
@@ -362,15 +350,11 @@ impl<'u> Solver<'u> {
             .checkpoints
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
-        trace!("resuming checkpoint {:?}", checkpoint.goal);
         while let Some(current) = checkpoint.alternatives.pop() {
-            trace!("evaluating alternative {:?}", current.head);
             if let Some(goals) = self.solution.unify_rule(&checkpoint.goal, &current) {
-                trace!("found a match, adding goals {:?}", goals);
                 self.unresolved_goals.extend(goals);
                 return true;
             } else {
-                trace!("no match, reverting");
                 self.solution.restore(&checkpoint.solution_checkpoint);
             }
         }
@@ -382,7 +366,6 @@ impl<'u> Solver<'u> {
 
     /// Backtrack to the first checkpoint that allows making a choice
     fn backtrack_resume(&mut self) -> bool {
-        trace!("backtrack_resume to latest checkpoint");
         while let Some(checkpoint) = self.checkpoints.last() {
             // restore to topmost checkpoint
             self.solution.restore(&checkpoint.solution_checkpoint);

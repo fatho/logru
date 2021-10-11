@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::{Sym, Var, term};
+use crate::{Sym, Var};
 
 
 pub struct Solver {
@@ -37,7 +37,7 @@ impl TermArena {
         let arg_start = self.args.len();
         let arg_end = arg_start + args.len();
         self.args.extend_from_slice(args);
-        self.terms.push(Term::App(functor, ArgId(arg_start)..ArgId(arg_end)));
+        self.terms.push(Term::App(functor, ArgRange(arg_start..arg_end)));
         term
     }
 
@@ -63,7 +63,7 @@ impl TermArena {
         }
     }
 
-    pub fn release(&mut self, checkpoint: Checkpoint) {
+    pub fn release(&mut self, checkpoint: &Checkpoint) {
         if checkpoint.args > self.args.len() || checkpoint.terms > self.terms.len() {
             panic!("{:?} cannot be restored at this moment", checkpoint);
         }
@@ -73,9 +73,26 @@ impl TermArena {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArgRange(Range<usize>);
+
+impl Iterator for ArgRange {
+    type Item = ArgId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(ArgId)
+    }
+}
+
+impl ArgRange {
+    pub fn len(&self) -> usize {
+        self.0.end - self.0.start
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Term {
     Var(Var),
-    App(Sym, Range<ArgId>),
+    App(Sym, ArgRange),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

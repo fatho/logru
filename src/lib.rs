@@ -1,9 +1,10 @@
+pub mod named;
 pub mod term;
 pub mod term_arena;
 pub mod union_find;
-pub mod named;
 
 use term::*;
+use term_arena::TermArena;
 
 #[derive(Debug)]
 pub struct Universe {
@@ -46,12 +47,18 @@ impl Universe {
             .map(|v| v.0)
             .max()
             .map_or(0, |x| x + 1);
+
+        let mut solution = SolutionState::new(max_var);
+
         // initialize solver
         Solver {
             universe: self,
-            unresolved_goals: goals,
+            unresolved_goals: goals
+                .iter()
+                .map(|app| solution.instantiate_app(app, 0))
+                .collect(),
             checkpoints: vec![],
-            solution: SolutionState::new(max_var),
+            solution,
         }
     }
 
@@ -130,27 +137,30 @@ impl Rule {
 
 pub struct Solver<'u> {
     universe: &'u Universe,
-    unresolved_goals: Vec<AppTerm>,
+    unresolved_goals: Vec<term_arena::TermId>,
     checkpoints: Vec<Checkpoint<'u>>,
     solution: SolutionState,
 }
 
 struct Checkpoint<'u> {
-    goal: AppTerm,
+    goal: term_arena::TermId,
     alternatives: Vec<&'u Rule>,
     goals_checkpoint: usize,
     solution_checkpoint: SolutionCheckpoint,
 }
 
 struct SolutionState {
-    variables: Vec<Option<Term>>,
+    variables: Vec<Option<term_arena::TermId>>,
     assignments: Vec<Var>,
     goal_vars: usize,
+    terms: TermArena,
+    instantiate_scratch: Vec<term_arena::TermId>,
 }
 
 struct SolutionCheckpoint {
     operations_checkpoint: usize,
     variables_checkpoint: usize,
+    terms_checkpoint: term_arena::Checkpoint,
 }
 
 impl SolutionState {
@@ -159,6 +169,8 @@ impl SolutionState {
             assignments: vec![],
             variables: vec![None; goal_vars],
             goal_vars: goal_vars,
+            terms: TermArena::new(),
+            instantiate_scratch: vec![],
         }
     }
 
@@ -166,10 +178,10 @@ impl SolutionState {
         self.variables.resize(self.variables.len() + num_vars, None);
     }
 
-    fn set_var(&mut self, var: Var, value: Term) -> bool {
+    fn set_var(&mut self, var: Var, value: term_arena::TermId) -> bool {
         assert!(self.variables[var.0].is_none());
 
-        if value.occurs(var) {
+        if self.occurs(var, value) {
             return false;
         }
 
@@ -179,40 +191,46 @@ impl SolutionState {
         true
     }
 
+    fn occurs(&self, var: Var, term: term_arena::TermId) -> bool {
+        match self.terms.get_term(term) {
+            term_arena::Term::Var(v) => v == var,
+            term_arena::Term::App(_, mut args) => {
+                args.any(|arg_id| self.occurs(var, self.terms.get_arg(arg_id)))
+            }
+        }
+    }
+
     fn checkpoint(&self) -> SolutionCheckpoint {
         SolutionCheckpoint {
             operations_checkpoint: self.assignments.len(),
             variables_checkpoint: self.variables.len(),
+            terms_checkpoint: self.terms.checkpoint(),
         }
     }
 
     fn restore(&mut self, checkpoint: &SolutionCheckpoint) {
-        for var in self
-            .assignments
-            .drain(checkpoint.operations_checkpoint..)
-        {
+        for var in self.assignments.drain(checkpoint.operations_checkpoint..) {
             self.variables[var.0] = None;
         }
         self.variables.truncate(checkpoint.variables_checkpoint);
+        self.terms.release(&checkpoint.terms_checkpoint);
     }
 
-    fn substitute(&self, term: &Term) -> Term {
-        match term {
-            Term::Var(v) => {
+    fn substitute(&self, term: term_arena::TermId) -> Term {
+        match self.terms.get_term(term) {
+            term_arena::Term::Var(v) => {
                 if let Some(value) = &self.variables[v.0] {
-                    self.substitute(value)
+                    self.substitute(*value)
                 } else {
-                    Term::Var(*v)
+                    Term::Var(v)
                 }
             }
-            Term::App(app) => Term::App(self.substitute_app(app)),
-        }
-    }
-
-    fn substitute_app(&self, term: &AppTerm) -> AppTerm {
-        AppTerm {
-            functor: term.functor,
-            args: term.args.iter().map(|t| self.substitute(t)).collect(),
+            term_arena::Term::App(functor, args) => Term::App(AppTerm {
+                functor,
+                args: args
+                    .map(|arg_id| self.substitute(self.terms.get_arg(arg_id)))
+                    .collect(),
+            }),
         }
     }
 
@@ -220,79 +238,102 @@ impl SolutionState {
         self.variables
             .iter()
             .take(self.goal_vars)
-            .map(|val| val.as_ref().map(|t| self.substitute(t)))
+            .map(|val| val.as_ref().map(|t| self.substitute(*t)))
             .collect()
     }
 
-    fn follow_vars(&self, mut term: Term) -> Term {
+    fn follow_vars(&self, mut term: term_arena::TermId) -> (term_arena::TermId, term_arena::Term) {
         loop {
-            match term {
-                Term::Var(var) => {
+            match self.terms.get_term(term) {
+                term_arena::Term::Var(var) => {
                     if let Some(value) = &self.variables[var.0] {
-                        term = value.clone();
+                        term = *value;
                     } else {
-                        return Term::Var(var);
+                        return (term, term_arena::Term::Var(var));
                     }
                 }
-                term @ Term::App(_) => return term,
+                app @ term_arena::Term::App(_, _) => return (term, app),
             }
         }
     }
 
-    fn unify(&mut self, goal_term: Term, rule_term: Term) -> bool {
+    fn unify(&mut self, goal_term: term_arena::TermId, rule_term: term_arena::TermId) -> bool {
+        let (goal_term_id, goal_term) = self.follow_vars(goal_term);
+        let (rule_term_id, rule_term) = self.follow_vars(rule_term);
 
-        let goal_term = self.follow_vars(goal_term);
-        let rule_term = self.follow_vars(rule_term);
-
-
-        // we know that if any of the terms is a variable, it is not instantiated yet
         match (goal_term, rule_term) {
-            (Term::Var(goal_var), Term::Var(rule_var)) => {
+            (term_arena::Term::Var(goal_var), term_arena::Term::Var(rule_var)) => {
                 if goal_var != rule_var {
-                    self.set_var(rule_var, Term::Var(goal_var))
+                    self.set_var(rule_var, goal_term_id)
                 } else {
                     true
                 }
             }
-            (Term::Var(goal_var), rule_term @ Term::App(_)) => self.set_var(goal_var, rule_term),
-            (goal_term @ Term::App(_), Term::Var(rule_var)) => self.set_var(rule_var, goal_term),
-            (Term::App(goal_app), Term::App(rule_app)) => self.unify_app(goal_app, rule_app),
+            (term_arena::Term::Var(goal_var), term_arena::Term::App(_, _)) => {
+                self.set_var(goal_var, rule_term_id)
+            }
+            (term_arena::Term::App(_, _), term_arena::Term::Var(rule_var)) => {
+                self.set_var(rule_var, goal_term_id)
+            }
+            (
+                term_arena::Term::App(goal_func, goal_args),
+                term_arena::Term::App(rule_func, rule_args),
+            ) => {
+                if goal_func != rule_func {
+                    return false;
+                }
+                if goal_args.len() != rule_args.len() {
+                    return false;
+                }
+
+                goal_args.zip(rule_args).all(|(goal_arg, rule_arg)| {
+                    self.unify(self.terms.get_arg(goal_arg), self.terms.get_arg(rule_arg))
+                })
+            }
         }
     }
 
-    fn unify_app(&mut self, goal_term: AppTerm, rule_term: AppTerm) -> bool {
-        if goal_term.functor != rule_term.functor {
-            return false;
-        }
-        if goal_term.args.len() != rule_term.args.len() {
-            return false;
-        }
-
-        goal_term
-            .args
-            .into_iter()
-            .zip(rule_term.args.into_iter())
-            .all(|(goal_arg, rule_arg)| self.unify(goal_arg, rule_arg))
-    }
-
-    fn unify_rule(&mut self, goal_term: &AppTerm, rule: &Rule) -> Option<Vec<AppTerm>> {
+    fn unify_rule<'a>(
+        &'a mut self,
+        goal_term: term_arena::TermId,
+        rule: &'a Rule,
+    ) -> Option<impl Iterator<Item = term_arena::TermId> + 'a> {
         // add uninstantiated variables for the rule
         let var_offset = self.variables.len();
         let rule_vars = rule.max_var() + 1;
         self.allocate_vars(rule_vars);
 
-        let instantiated_rule_head = rule.head.instantiate(var_offset);
+        let instantiated_rule_head = self.instantiate_app(&rule.head, var_offset);
 
-        if self.unify_app(goal_term.clone(), instantiated_rule_head) {
+        if self.unify(goal_term, instantiated_rule_head) {
             Some(
                 rule.tail
                     .iter()
-                    .map(|tail| tail.instantiate(var_offset))
-                    .collect(),
+                    .map(move |tail| self.instantiate_app(tail, var_offset)),
             )
         } else {
             None
         }
+    }
+
+    fn instantiate(&mut self, term: &Term, offset: usize) -> term_arena::TermId {
+        match term {
+            Term::Var(v) => self.terms.var(Var(v.0 + offset)),
+            Term::App(app) => self.instantiate_app(app, offset),
+        }
+    }
+
+    fn instantiate_app(&mut self, app: &AppTerm, offset: usize) -> term_arena::TermId {
+        let args_start = self.instantiate_scratch.len();
+        for arg in &app.args {
+            let arg_term = self.instantiate(arg, offset);
+            self.instantiate_scratch.push(arg_term);
+        }
+        let out = self
+            .terms
+            .app(app.functor, &self.instantiate_scratch[args_start..]);
+        self.instantiate_scratch.truncate(args_start);
+        out
     }
 }
 
@@ -306,8 +347,10 @@ impl<'u> Solver<'u> {
     fn step(&mut self) -> Step {
         if let Some(goal) = self.unresolved_goals.pop() {
             // resolve goal
-
-            let goal_sym = &self.universe.symbols[goal.functor.0];
+            let goal_sym = match self.solution.terms.get_term(goal) {
+                term_arena::Term::Var(_) => unreachable!(),
+                term_arena::Term::App(functor, _) => &self.universe.symbols[functor.0],
+            };
 
             // store alternatives in reverse order so that we can `pop` and still process
             // them in the original order
@@ -342,10 +385,12 @@ impl<'u> Solver<'u> {
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
         while let Some(current) = checkpoint.alternatives.pop() {
-            if let Some(goals) = self.solution.unify_rule(&checkpoint.goal, &current) {
+            let result = self.solution.unify_rule(checkpoint.goal, &current);
+            if let Some(goals) = result {
                 self.unresolved_goals.extend(goals);
                 return true;
             } else {
+                drop(result);
                 self.solution.restore(&checkpoint.solution_checkpoint);
             }
         }

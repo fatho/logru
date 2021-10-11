@@ -91,6 +91,11 @@ impl Iterator for ArgRange {
             F: FnMut(Self::Item) -> bool, {
         (self.start..self.end).any(move |x| f(ArgId(x)))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
 }
 
 impl ArgRange {

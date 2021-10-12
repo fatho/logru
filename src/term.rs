@@ -9,7 +9,7 @@ pub enum Term {
 impl Term {
     pub fn vars(&self) -> VarIter {
         VarIter {
-            backtrack: vec![&self],
+            backtrack: vec![self],
         }
     }
 

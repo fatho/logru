@@ -2,6 +2,9 @@
 **/*.rs.bk
 Cargo.lock
 
+# IDE settings
+.vscode
+
 # Profiling
 perf.data
 perf.data.old

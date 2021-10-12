@@ -58,7 +58,7 @@ impl Universe {
             universe: self,
             unresolved_goals: goals
                 .iter()
-                .map(|app| instantiate_app(&mut solution.terms, &mut scratch, &app, 0))
+                .map(|app| instantiate_app(&mut solution.terms, &mut scratch, app, 0))
                 .collect(),
             checkpoints: vec![],
             solution,
@@ -128,7 +128,7 @@ impl Rule {
             functor: pred,
             args,
         };
-        self.tail.push(app_term.into());
+        self.tail.push(app_term);
         self
     }
 
@@ -190,7 +190,7 @@ impl SolutionState {
         Self {
             assignments: vec![],
             variables: vec![None; goal_vars],
-            goal_vars: goal_vars,
+            goal_vars,
             terms: TermArena::new(),
         }
     }
@@ -411,7 +411,7 @@ impl<'u> Solver<'u> {
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
         while let Some(current) = checkpoint.alternatives.pop() {
-            let result = self.solution.unify_rule(checkpoint.goal, &current);
+            let result = self.solution.unify_rule(checkpoint.goal, current);
             if let Some(goals) = result {
                 self.unresolved_goals.extend(goals);
                 return true;

@@ -81,6 +81,12 @@ impl TermArena {
     }
 }
 
+impl Default for TermArena {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArgRange {
     start: usize,
@@ -116,6 +122,10 @@ impl Iterator for ArgRange {
 impl ArgRange {
     pub fn len(&self) -> usize {
         self.end - self.start
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
     }
 }
 

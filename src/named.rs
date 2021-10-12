@@ -35,7 +35,7 @@ impl NamedUniverse {
         }
     }
 
-    pub fn term<'a>(&mut self, term: &'a str) -> Result<Term, ParseError> {
+    pub fn term(&mut self, term: &str) -> Result<Term, ParseError> {
         self.parse_term(term).map(|(t, _)| t)
     }
 
@@ -69,7 +69,7 @@ impl NamedUniverse {
             });
             Ok(())
         } else {
-            return Err(ParseError);
+            Err(ParseError)
         }
     }
 
@@ -129,16 +129,16 @@ impl NamedUniverse {
                                     remaining = next_remaining;
                                 }
                                 Some(')') => {
-                                    return Ok((
+                                    break Ok((
                                         Term::App(AppTerm { functor: sym, args }),
                                         remaining_chars.as_str(),
                                     ))
                                 }
-                                _ => return Err(ParseError),
+                                _ => break Err(ParseError),
                             }
                         }
                     } else {
-                        return Ok((Term::App(AppTerm { functor: sym, args }), &term[last..]));
+                        Ok((Term::App(AppTerm { functor: sym, args }), &term[last..]))
                     }
                 } else {
                     // all alphabetic, simple term
@@ -201,6 +201,12 @@ impl NamedUniverse {
 
     pub fn inner(&self) -> &Universe {
         &self.universe
+    }
+}
+
+impl Default for NamedUniverse {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

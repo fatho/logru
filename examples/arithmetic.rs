@@ -1,4 +1,3 @@
-use std::time::Instant;
 use logru::named::NamedUniverse;
 
 fn main() {

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{AppTerm, Query, Rule, Sym, Term, Var},
+    solver::{query_dfs, SolutionIter},
     universe::Universe,
 };
 
@@ -71,6 +72,11 @@ impl NamedUniverse {
         } else {
             Err(ParseError)
         }
+    }
+
+    pub fn query_dfs(&mut self, goals_str: &[&str]) -> Result<SolutionIter, ParseError> {
+        let query = self.parse_query(goals_str)?;
+        Ok(query_dfs(&self.universe, &query))
     }
 
     pub fn parse_query(&mut self, goals_str: &[&str]) -> Result<Query, ParseError> {

@@ -158,11 +158,13 @@ impl TermArena {
     }
 
     /// Dereference an argument handle into the corresponding `TermId` representing that argument.
+    #[inline]
     pub fn get_arg(&self, arg_id: ArgId) -> TermId {
         self.args[arg_id.0]
     }
 
     /// Dereference a term handle into the actual term.
+    #[inline]
     pub fn get_term(&self, term_id: TermId) -> Term {
         self.terms[term_id.0]
     }
@@ -230,6 +232,7 @@ impl Iterator for ArgRange {
         }
     }
 
+    #[inline]
     fn any<F>(&mut self, mut f: F) -> bool
     where
         Self: Sized,
@@ -238,6 +241,7 @@ impl Iterator for ArgRange {
         (self.start..self.end).any(move |x| f(ArgId(x)))
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let len = self.len();
         (len, Some(len))
@@ -246,11 +250,13 @@ impl Iterator for ArgRange {
 
 impl ArgRange {
     /// Number of arguments represented by this range.
+    #[inline]
     pub fn len(&self) -> usize {
         self.end - self.start
     }
 
     /// Check whether there are any arguments in this range.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.start == self.end
     }

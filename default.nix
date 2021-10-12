@@ -34,7 +34,7 @@
         in
           blacklistedSrc;
 
-      cargoSha256 = "08fq0azc6wib6rqnxmm4r5pjqnx4pnww7lbhbc350gqh7g4jfyzp";
+      cargoSha256 = "14sbb60vaqss2m87vjg36ljsci6n30qyjzsfh08hlcvw9wkrby1d";
 
       meta = with lib; {
           description = "Logic programming in Rust";

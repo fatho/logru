@@ -162,7 +162,11 @@ impl CompiledRuleDb {
     /// Query all the rules that have a matching head.
     #[inline(always)]
     pub fn rules_by_head(&self, head: Sym) -> &[CompiledRule] {
-        &self.rules_by_head[head.ord()]
+        if head.ord() < self.rules_by_head.len() {
+            &self.rules_by_head[head.ord()]
+        } else {
+            &[]
+        }
     }
 
     fn ensure_capacity(&mut self, sym: Sym) {

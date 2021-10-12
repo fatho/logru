@@ -146,17 +146,19 @@ pub struct SolutionIter<'s> {
     /// Goals that still need to be solved
     unresolved_goals: Vec<term_arena::TermId>,
     /// Checkpoints created for past decisions, used for backtracking
-    checkpoints: Vec<Checkpoint<'s>>,
+    checkpoints: Vec<Checkpoint>,
     /// Current (partial) solution
     solution: SolutionState,
 }
 
 /// A solver checkpoint that can be used for backtracking to an earlier choice point.
-struct Checkpoint<'s> {
+struct Checkpoint {
     /// The goal for which we needed to make the choice.
     goal: term_arena::TermId,
-    /// The alternatives that we still need to try.
-    alternatives: Vec<&'s CompiledRule>,
+    /// The symbol of the rule we're matching with.
+    rule_head: Sym,
+    /// The alternative we need to try next.
+    alternative: usize,
     /// The number of unresolved goals at the time of the choice. Used for popping goals from the
     /// stack that were added by a matching rule.
     goals_checkpoint: usize,
@@ -185,18 +187,16 @@ impl<'s> SolutionIter<'s> {
         // top-most one.
         if let Some(goal) = self.unresolved_goals.pop() {
             // resolve goal
-            let matching_rules = match self.solution.terms.get_term(goal) {
+            let rule_head = match self.solution.terms.get_term(goal) {
+                // we currently don't support variable goals
                 term_arena::Term::Var(_) => unreachable!(),
-                term_arena::Term::App(functor, _) => self.rules.rules_by_head(functor),
+                term_arena::Term::App(functor, _) => functor,
             };
-
-            // store alternatives in reverse order so that we can `pop` and still process
-            // them in the original order
-            let alternatives = matching_rules.iter().rev().collect::<Vec<_>>();
 
             self.checkpoints.push(Checkpoint {
                 goal,
-                alternatives,
+                rule_head,
+                alternative: 0,
                 solution_checkpoint: self.solution.checkpoint(),
                 goals_checkpoint: self.unresolved_goals.len(),
             });
@@ -236,7 +236,9 @@ impl<'s> SolutionIter<'s> {
             .checkpoints
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
-        while let Some(current) = checkpoint.alternatives.pop() {
+        let rules = self.rules.rules_by_head(checkpoint.rule_head);
+        while let Some(current) = rules.get(checkpoint.alternative) {
+            checkpoint.alternative += 1;
             let result = self.solution.unify_rule(checkpoint.goal, current);
             if let Some(goals) = result {
                 self.unresolved_goals.extend(goals);

@@ -126,3 +126,21 @@ impl Rule {
         self
     }
 }
+
+pub fn quantify<R, const N: usize>(f: impl FnOnce([Var; N]) -> R) -> R {
+    // initialize variable array with temporary fresh variables
+    //   that disappear once we're done solving
+    let mut vars = [Var::from_ord(0); N];
+    vars.iter_mut()
+        .enumerate()
+        .for_each(|(i, var)| *var = Var::from_ord(i));
+    f(vars)
+}
+
+pub fn forall<const N: usize>(f: impl FnOnce([Var; N]) -> Rule) -> Rule {
+    quantify(f)
+}
+
+pub fn exists<const N: usize>(f: impl FnOnce([Var; N]) -> Rule) -> Rule {
+    quantify(f)
+}

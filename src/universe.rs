@@ -39,16 +39,6 @@ impl Default for Universe {
     }
 }
 
-pub fn quantify<R, const N: usize>(f: impl FnOnce([Var; N]) -> R) -> R {
-    // initialize variable array with temporary fresh variables
-    //   that disappear once we're done solving
-    let mut vars = [Var::from_ord(0); N];
-    vars.iter_mut()
-        .enumerate()
-        .for_each(|(i, var)| *var = Var::from_ord(i));
-    f(vars)
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -93,13 +83,13 @@ mod test {
         u.add_rule(Rule::fact(parent, vec![carol.into(), faithe.into()]));
         u.add_rule(Rule::fact(parent, vec![dave.into(), faithe.into()]));
 
-        u.add_rule(quantify(|[p, q, r]| {
+        u.add_rule(forall(|[p, q, r]| {
             Rule::fact(grandparent, vec![p.into(), r.into()])
                 .when(parent, vec![p.into(), q.into()])
                 .when(parent, vec![q.into(), r.into()])
         }));
 
-        u.add_rule(quantify(|[p, c1, c2]| {
+        u.add_rule(forall(|[p, c1, c2]| {
             Rule::fact(siblings, vec![c1.into(), c2.into()])
                 .when(parent, vec![p.into(), c1.into()])
                 .when(parent, vec![p.into(), c2.into()])
@@ -166,15 +156,15 @@ mod test {
         u.add_rule(Rule::fact(is_zero, vec![z.into()]));
         u.add_rule(Rule::fact(is_natural, vec![z.into()]));
 
-        u.add_rule(quantify(|[x]| {
+        u.add_rule(forall(|[x]| {
             Rule::fact(is_natural, vec![ast::app(s, vec![x.into()])])
                 .when(is_natural, vec![x.into()])
         }));
 
-        u.add_rule(quantify(|[x]| {
+        u.add_rule(forall(|[x]| {
             Rule::fact(add, vec![x.into(), z.into(), x.into()]).when(is_natural, vec![x.into()])
         }));
-        u.add_rule(quantify(|[x, y, z]| {
+        u.add_rule(forall(|[x, y, z]| {
             Rule::fact(
                 add,
                 vec![

@@ -1,6 +1,5 @@
 use crate::{Sym, Var};
 
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(transparent)]
 pub struct TermId(usize);
@@ -17,7 +16,10 @@ pub struct TermArena {
 
 impl TermArena {
     pub fn new() -> Self {
-        Self { terms: vec![], args: vec![] }
+        Self {
+            terms: vec![],
+            args: vec![],
+        }
     }
 
     pub fn var(&mut self, var: Var) -> TermId {
@@ -31,30 +33,47 @@ impl TermArena {
         let arg_start = self.args.len();
         let arg_end = arg_start + args.len();
         self.args.extend_from_slice(args);
-        self.terms.push(Term::App(functor, ArgRange { start: arg_start, end: arg_end }));
+        self.terms.push(Term::App(
+            functor,
+            ArgRange {
+                start: arg_start,
+                end: arg_end,
+            },
+        ));
         term
     }
-
 
     pub fn atom(&mut self, atom: Sym) -> TermId {
         self.app(atom, &[])
     }
 
-    pub fn instantiate(&mut self, blueprint: &TermArena, var_offset: usize) -> impl Fn(TermId) -> TermId {
+    pub fn instantiate(
+        &mut self,
+        blueprint: &TermArena,
+        var_offset: usize,
+    ) -> impl Fn(TermId) -> TermId {
         let here = self.checkpoint();
-        self.terms.extend(blueprint.terms.iter().map(|term| match term {
-            Term::Var(var) => Term::Var(Var(var.0 + var_offset)),
-            Term::App(func, args) => Term::App(*func, ArgRange {
-                start: args.start + here.args,
-                end: args.end + here.args,
-            }),
-        }));
-        self.args.extend(blueprint.args.iter().map(|term_id| TermId(term_id.0 + here.terms)));
+        self.terms
+            .extend(blueprint.terms.iter().map(|term| match term {
+                Term::Var(var) => Term::Var(Var(var.0 + var_offset)),
+                Term::App(func, args) => Term::App(
+                    *func,
+                    ArgRange {
+                        start: args.start + here.args,
+                        end: args.end + here.args,
+                    },
+                ),
+            }));
+        self.args.extend(
+            blueprint
+                .args
+                .iter()
+                .map(|term_id| TermId(term_id.0 + here.terms)),
+        );
 
         let term_offset = here.terms;
         move |TermId(old)| TermId(old + term_offset)
     }
-
 
     pub fn get_arg(&self, arg_id: ArgId) -> TermId {
         self.args[arg_id.0]
@@ -63,7 +82,6 @@ impl TermArena {
     pub fn get_term(&self, term_id: TermId) -> Term {
         self.terms[term_id.0]
     }
-
 
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
@@ -108,8 +126,9 @@ impl Iterator for ArgRange {
 
     fn any<F>(&mut self, mut f: F) -> bool
     where
-            Self: Sized,
-            F: FnMut(Self::Item) -> bool, {
+        Self: Sized,
+        F: FnMut(Self::Item) -> bool,
+    {
         (self.start..self.end).any(move |x| f(ArgId(x)))
     }
 

@@ -1,4 +1,4 @@
-use super::{Var, Sym};
+use super::{Sym, Var};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Term {
@@ -54,14 +54,17 @@ pub struct AppTerm {
 
 impl From<Sym> for AppTerm {
     fn from(s: Sym) -> Self {
-        Self { functor: s, args: vec![] }
+        Self {
+            functor: s,
+            args: vec![],
+        }
     }
 }
 
 impl AppTerm {
     pub fn vars(&self) -> VarIter {
         VarIter {
-            backtrack: self.args.iter().rev().collect()
+            backtrack: self.args.iter().rev().collect(),
         }
     }
 
@@ -73,7 +76,11 @@ impl AppTerm {
     }
 
     pub fn count_var_slots(&self) -> usize {
-        self.args.iter().map(|t| t.count_var_slots()).max().unwrap_or(0)
+        self.args
+            .iter()
+            .map(|t| t.count_var_slots())
+            .max()
+            .unwrap_or(0)
     }
 }
 
@@ -91,37 +98,41 @@ impl<'a> Iterator for VarIter<'a> {
                     Term::Var(var) => break Some(*var),
                     Term::App(app) => {
                         self.backtrack.extend(app.args.iter().rev());
-                    },
-                }
+                    }
+                },
                 None => break None,
             }
         }
     }
 }
 
-
 #[test]
 fn test_var_iter() {
     assert_eq!(Term::Var(Var(0)).vars().collect::<Vec<_>>(), vec![Var(0)]);
 
-    assert_eq!(Term::App(AppTerm {
-        functor: Sym(0),
-        args: vec![
-            Term::App(AppTerm {
-                functor: Sym(1),
-                args: vec![],
-            }),
-            Term::App(AppTerm {
-                functor: Sym(2),
-                args: vec![
-                    Term::Var(Var(0)),
-                    Term::App(AppTerm {
-                        functor: Sym(1),
-                        args: vec![Term::Var(Var(1))],
-                    }),
-                    Term::Var(Var(2)),
-                ],
-            }),
-        ],
-    }).vars().collect::<Vec<_>>(), vec![Var(0), Var(1), Var(2)]);
+    assert_eq!(
+        Term::App(AppTerm {
+            functor: Sym(0),
+            args: vec![
+                Term::App(AppTerm {
+                    functor: Sym(1),
+                    args: vec![],
+                }),
+                Term::App(AppTerm {
+                    functor: Sym(2),
+                    args: vec![
+                        Term::Var(Var(0)),
+                        Term::App(AppTerm {
+                            functor: Sym(1),
+                            args: vec![Term::Var(Var(1))],
+                        }),
+                        Term::Var(Var(2)),
+                    ],
+                }),
+            ],
+        })
+        .vars()
+        .collect::<Vec<_>>(),
+        vec![Var(0), Var(1), Var(2)]
+    );
 }

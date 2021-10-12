@@ -28,7 +28,7 @@ impl NamedUniverse {
         if let Some(sym) = self.names.get(name) {
             *sym
         } else {
-            let sym = self.universe.new_symbol();
+            let sym = self.universe.alloc_symbol();
             self.names.insert(name.to_owned(), sym);
             self.syms.insert(sym, name.to_owned());
             sym

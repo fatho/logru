@@ -7,10 +7,16 @@ pub struct Universe {
 }
 
 impl Universe {
-    pub fn new_symbol(&mut self) -> Sym {
+    pub fn alloc_symbol(&mut self) -> Sym {
         let sym = Sym::from_ord(self.symbols.len());
         self.symbols.push(());
         sym
+    }
+
+    pub fn alloc_symbols(&mut self, count: usize) -> impl Iterator<Item = Sym> {
+        let fresh_start = self.symbols.len();
+        self.symbols.resize(self.symbols.len() + count, ());
+        (fresh_start..fresh_start + count).map(Sym::from_ord)
     }
 
     pub fn add_rule(&mut self, rule: Rule) {
@@ -63,16 +69,16 @@ mod test {
 
         let mut u = Universe::new();
 
-        let alice = u.new_symbol();
-        let bob = u.new_symbol();
-        let carol = u.new_symbol();
-        let dave = u.new_symbol();
-        let eve = u.new_symbol();
-        let faithe = u.new_symbol();
+        let alice = u.alloc_symbol();
+        let bob = u.alloc_symbol();
+        let carol = u.alloc_symbol();
+        let dave = u.alloc_symbol();
+        let eve = u.alloc_symbol();
+        let faithe = u.alloc_symbol();
 
-        let parent = u.new_symbol();
-        let grandparent = u.new_symbol();
-        let siblings = u.new_symbol();
+        let parent = u.alloc_symbol();
+        let grandparent = u.alloc_symbol();
+        let siblings = u.alloc_symbol();
 
         u.add_rule(Rule::fact(parent, vec![alice.into(), carol.into()]));
         u.add_rule(Rule::fact(parent, vec![bob.into(), carol.into()]));
@@ -146,12 +152,12 @@ mod test {
 
         let mut u = Universe::new();
 
-        let s = u.new_symbol();
-        let z = u.new_symbol();
+        let s = u.alloc_symbol();
+        let z = u.alloc_symbol();
 
-        let is_natural = u.new_symbol();
-        let is_zero = u.new_symbol();
-        let add = u.new_symbol();
+        let is_natural = u.alloc_symbol();
+        let is_zero = u.alloc_symbol();
+        let add = u.alloc_symbol();
 
         u.add_rule(Rule::fact(is_zero, vec![z.into()]));
         u.add_rule(Rule::fact(is_natural, vec![z.into()]));

@@ -135,11 +135,15 @@ pub struct Query {
 impl Query {
     /// The query that is vacuously true
     pub fn empty() -> Query {
-        Query::new(vec![])
+        Query::with_goals(vec![])
     }
 
-    pub fn new(goals: Vec<AppTerm>) -> Query {
+    pub fn with_goals(goals: Vec<AppTerm>) -> Query {
         Query { goals }
+    }
+
+    pub fn new(goal: AppTerm) -> Query {
+        Query::with_goals(vec![goal])
     }
 
     pub fn and(mut self, pred: Sym, args: Vec<Term>) -> Self {

@@ -84,7 +84,7 @@ impl NamedUniverse {
             }
         }
 
-        Ok(Query::new(goals))
+        Ok(Query::with_goals(goals))
     }
 
     fn parse_term<'a>(&mut self, term: &'a str) -> Result<(Term, &'a str), ParseError> {

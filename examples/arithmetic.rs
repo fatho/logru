@@ -14,10 +14,10 @@ fn main() {
     u.rule("mul($0,s($1),$2)", &["add($0,$3,$2)", "mul($0,$1,$3)"])
         .unwrap();
 
-    let query = u.parse_query(&["mul(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),$0)"]).unwrap();
+    let query = u.parse_query(&["mul($0,$0,$1)"]).unwrap();
     let solver = u.inner().query(query);
 
-    for solution in solver {
+    for solution in solver.take(10) {
         println!("SOLUTION:");
         for (index, var) in solution.into_iter().enumerate() {
             if let Some(term) = var {

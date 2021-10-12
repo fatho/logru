@@ -19,6 +19,9 @@ criterion = "0.3.5"
 [profile.release]
 debug = true
 
+[profile.bench]
+debug = true
+
 [[bench]]
 name = "criterion"
 harness = false

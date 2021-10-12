@@ -8,3 +8,4 @@
 perf.data
 perf.data.old
 perf.svg
+flamegraph.svg

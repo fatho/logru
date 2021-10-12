@@ -12,6 +12,7 @@ in
       clippy
       cargo-audit
       cargo-edit
+      cargo-flamegraph
 
       # Nix tools
       niv

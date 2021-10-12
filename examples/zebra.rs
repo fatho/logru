@@ -1,7 +1,5 @@
 use std::time::Instant;
 
-//use logru::zebra;
-
 fn main() {
     let mut u = logru::named::NamedUniverse::new();
 
@@ -52,9 +50,9 @@ fn main() {
     )
     .unwrap();
 
-    let mut solver = u.query(&["puzzle($0)"]).unwrap();
+    let mut solutions = u.query_dfs(&["puzzle($0)"]).unwrap();
     let before = Instant::now();
-    let solution = solver.next().unwrap();
+    let solution = solutions.next().unwrap();
     let duration = before.elapsed();
 
     for var in solution {

@@ -1,14 +1,12 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use logru::named::NamedUniverse;
+use logru::{named::NamedUniverse, solver::query_dfs};
 
 macro_rules! sanity_check {
-    ($computation:expr,$result:expr) => {
-        {
-            let r = $computation;
-            assert_eq!(r, $result);
-            r
-        }
-    };
+    ($computation:expr,$result:expr) => {{
+        let r = $computation;
+        assert_eq!(r, $result);
+        r
+    }};
 }
 
 fn prepare_zebra() -> NamedUniverse {
@@ -64,8 +62,9 @@ fn prepare_zebra() -> NamedUniverse {
 }
 
 fn zebra(u: &mut NamedUniverse) -> usize {
-    let solver = u.query(&["puzzle($0)"]).unwrap();
-    sanity_check!(solver.count(), 1)
+    let query = u.parse_query(&["puzzle($0)"]).unwrap();
+    let solutions = query_dfs(u.inner(), &query);
+    sanity_check!(solutions.count(), 1)
 }
 
 fn prepare_arithmetic() -> NamedUniverse {
@@ -78,34 +77,40 @@ fn prepare_arithmetic() -> NamedUniverse {
     u.rule("add($0,s($1),s($2))", &["add($0,$1,$2)"]).unwrap();
 
     u.rule("mul($0,z,z)", &["is_natural($0)"]).unwrap();
-    u.rule("mul($0,s($1),$2)", &["add($0,$3,$2)","mul($0,$1,$3)"]).unwrap();
+    u.rule("mul($0,s($1),$2)", &["add($0,$3,$2)", "mul($0,$1,$3)"])
+        .unwrap();
 
     u
 }
 
 fn arithmetic_add(u: &mut NamedUniverse) -> usize {
-    let solver = u.query(&["add(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),$0)"]).unwrap();
-    sanity_check!(solver.count(), 1)
+    let query = u.parse_query(&["add(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),$0)"]).unwrap();
+    let solutions = query_dfs(u.inner(), &query);
+    sanity_check!(solutions.count(), 1)
 }
 
 fn arithmetic_add_reverse(u: &mut NamedUniverse) -> usize {
-    let solver = u.query(&["add($0,$1,s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z)))))))))))))))))))))))))))))))))))"]).unwrap();
-    sanity_check!(solver.count(), 35)
+    let query = u.parse_query(&["add($0,$1,s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z)))))))))))))))))))))))))))))))))))"]).unwrap();
+    let solutions = query_dfs(u.inner(), &query);
+    sanity_check!(solutions.count(), 35)
 }
 
 fn arithmetic_sub(u: &mut NamedUniverse) -> usize {
-    let solver = u.query(&["add($0,s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z)))))))))))))))))))))))))))))))))))"]).unwrap();
-    sanity_check!(solver.count(), 1)
+    let query = u.parse_query(&["add($0,s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z)))))))))))))))))))))))))))))))))))"]).unwrap();
+    let solutions = query_dfs(u.inner(), &query);
+    sanity_check!(solutions.count(), 1)
 }
 
 fn arithmetic_mul(u: &mut NamedUniverse) -> usize {
-    let solver = u.query(&["mul(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),$0)"]).unwrap();
-    sanity_check!(solver.count(), 1)
+    let query = u.parse_query(&["mul(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),$0)"]).unwrap();
+    let solutions = query_dfs(u.inner(), &query);
+    sanity_check!(solutions.count(), 1)
 }
 
 fn arithmetic_squares(u: &mut NamedUniverse) -> usize {
-    let solver = u.query(&["mul($0,$0,$1)"]).unwrap();
-    sanity_check!(solver.take(40).count(), 40)
+    let query = u.parse_query(&["mul($0,$0,$1)"]).unwrap();
+    let solutions = query_dfs(u.inner(), &query);
+    sanity_check!(solutions.take(40).count(), 40)
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -113,11 +118,21 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut arithmetic_universe = prepare_arithmetic();
 
     c.bench_function("zebra", |b| b.iter(|| zebra(&mut zebra_universe)));
-    c.bench_function("add", |b| b.iter(|| arithmetic_add(&mut arithmetic_universe)));
-    c.bench_function("add reverse", |b| b.iter(|| arithmetic_add_reverse(&mut arithmetic_universe)));
-    c.bench_function("sub", |b| b.iter(|| arithmetic_sub(&mut arithmetic_universe)));
-    c.bench_function("mul", |b| b.iter(|| arithmetic_mul(&mut arithmetic_universe)));
-    c.bench_function("squares", |b| b.iter(|| arithmetic_squares(&mut arithmetic_universe)));
+    c.bench_function("add", |b| {
+        b.iter(|| arithmetic_add(&mut arithmetic_universe))
+    });
+    c.bench_function("add reverse", |b| {
+        b.iter(|| arithmetic_add_reverse(&mut arithmetic_universe))
+    });
+    c.bench_function("sub", |b| {
+        b.iter(|| arithmetic_sub(&mut arithmetic_universe))
+    });
+    c.bench_function("mul", |b| {
+        b.iter(|| arithmetic_mul(&mut arithmetic_universe))
+    });
+    c.bench_function("squares", |b| {
+        b.iter(|| arithmetic_squares(&mut arithmetic_universe))
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    term::{AppTerm, Term},
-    Rule, Solver, Sym, Universe, Var,
+    ast::{AppTerm, Query, Rule, Sym, Term, Var},
+    solver::{query_dfs, SolutionIter},
+    universe::Universe,
 };
 
 #[derive(Debug)]
@@ -28,14 +29,14 @@ impl NamedUniverse {
         if let Some(sym) = self.names.get(name) {
             *sym
         } else {
-            let sym = self.universe.new_symbol();
+            let sym = self.universe.alloc_symbol();
             self.names.insert(name.to_owned(), sym);
             self.syms.insert(sym, name.to_owned());
             sym
         }
     }
 
-    pub fn term<'a>(&mut self, term: &'a str) -> Result<Term, ParseError> {
+    pub fn term(&mut self, term: &str) -> Result<Term, ParseError> {
         self.parse_term(term).map(|(t, _)| t)
     }
 
@@ -69,16 +70,16 @@ impl NamedUniverse {
             });
             Ok(())
         } else {
-            return Err(ParseError);
+            Err(ParseError)
         }
     }
 
-    pub fn query(&mut self, goals_str: &[&str]) -> Result<Solver, ParseError> {
-        let goals = self.parse_query(goals_str)?;
-        Ok(self.universe.query(goals))
+    pub fn query_dfs(&mut self, goals_str: &[&str]) -> Result<SolutionIter, ParseError> {
+        let query = self.parse_query(goals_str)?;
+        Ok(query_dfs(&self.universe, &query))
     }
 
-    pub fn parse_query(&mut self, goals_str: &[&str]) -> Result<Vec<AppTerm>, ParseError> {
+    pub fn parse_query(&mut self, goals_str: &[&str]) -> Result<Query, ParseError> {
         let mut goals = Vec::new();
 
         for goal in goals_str {
@@ -89,7 +90,7 @@ impl NamedUniverse {
             }
         }
 
-        Ok(goals)
+        Ok(Query::with_goals(goals))
     }
 
     fn parse_term<'a>(&mut self, term: &'a str) -> Result<(Term, &'a str), ParseError> {
@@ -105,7 +106,7 @@ impl NamedUniverse {
                         (&term[1..], "")
                     };
                 Ok((
-                    Term::Var(Var(num_part.parse().map_err(|_| ParseError)?)),
+                    Term::Var(Var::from_ord(num_part.parse().map_err(|_| ParseError)?)),
                     rest,
                 ))
             }
@@ -129,16 +130,16 @@ impl NamedUniverse {
                                     remaining = next_remaining;
                                 }
                                 Some(')') => {
-                                    return Ok((
+                                    break Ok((
                                         Term::App(AppTerm { functor: sym, args }),
                                         remaining_chars.as_str(),
                                     ))
                                 }
-                                _ => return Err(ParseError),
+                                _ => break Err(ParseError),
                             }
                         }
                     } else {
-                        return Ok((Term::App(AppTerm { functor: sym, args }), &term[last..]));
+                        Ok((Term::App(AppTerm { functor: sym, args }), &term[last..]))
                     }
                 } else {
                     // all alphabetic, simple term
@@ -164,7 +165,7 @@ impl NamedUniverse {
 
     pub fn pretty<W: std::fmt::Write>(&self, writer: &mut W, term: &Term) -> std::fmt::Result {
         match term {
-            Term::Var(v) => write!(writer, "${}", v.0),
+            Term::Var(v) => write!(writer, "${}", v.ord()),
             Term::App(app) => self.pretty_app(writer, app),
         }
     }
@@ -177,7 +178,7 @@ impl NamedUniverse {
         if let Some(name) = &self.syms.get(&term.functor) {
             write!(writer, "{}", name)?;
         } else {
-            write!(writer, "<unk:{}>", term.functor.0)?;
+            write!(writer, "<unk:{}>", term.functor.ord())?;
         }
 
         if let Some((first, rest)) = term.args.split_first() {
@@ -204,6 +205,11 @@ impl NamedUniverse {
     }
 }
 
+impl Default for NamedUniverse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[test]
 fn parse_test() {

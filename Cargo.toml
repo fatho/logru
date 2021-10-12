@@ -3,6 +3,7 @@ name = "logru"
 version = "0.1.0"
 authors = ["Fabian Thorand <f.thorand@gmail.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 ctrlc = "3.2.1"

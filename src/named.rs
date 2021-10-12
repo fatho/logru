@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{AppTerm, Rule, Sym, Term, Var},
+    ast::{AppTerm, Query, Rule, Sym, Term, Var},
     universe::Universe,
 };
 
@@ -73,7 +73,7 @@ impl NamedUniverse {
         }
     }
 
-    pub fn parse_query(&mut self, goals_str: &[&str]) -> Result<Vec<AppTerm>, ParseError> {
+    pub fn parse_query(&mut self, goals_str: &[&str]) -> Result<Query, ParseError> {
         let mut goals = Vec::new();
 
         for goal in goals_str {
@@ -84,7 +84,7 @@ impl NamedUniverse {
             }
         }
 
-        Ok(goals)
+        Ok(Query::new(goals))
     }
 
     fn parse_term<'a>(&mut self, term: &'a str) -> Result<(Term, &'a str), ParseError> {

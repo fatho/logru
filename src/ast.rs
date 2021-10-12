@@ -127,9 +127,40 @@ impl Rule {
     }
 }
 
-pub fn quantify<R, const N: usize>(f: impl FnOnce([Var; N]) -> R) -> R {
-    // initialize variable array with temporary fresh variables
-    //   that disappear once we're done solving
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Query {
+    pub goals: Vec<AppTerm>,
+}
+
+impl Query {
+    /// The query that is vacuously true
+    pub fn empty() -> Query {
+        Query::new(vec![])
+    }
+
+    pub fn new(goals: Vec<AppTerm>) -> Query {
+        Query { goals }
+    }
+
+    pub fn and(mut self, pred: Sym, args: Vec<Term>) -> Self {
+        let app_term = AppTerm {
+            functor: pred,
+            args,
+        };
+        self.goals.push(app_term);
+        self
+    }
+
+    pub fn count_var_slots(&self) -> usize {
+        self.goals
+            .iter()
+            .map(|t| t.count_var_slots())
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+fn quantify<R, const N: usize>(f: impl FnOnce([Var; N]) -> R) -> R {
     let mut vars = [Var::from_ord(0); N];
     vars.iter_mut()
         .enumerate()
@@ -141,6 +172,6 @@ pub fn forall<const N: usize>(f: impl FnOnce([Var; N]) -> Rule) -> Rule {
     quantify(f)
 }
 
-pub fn exists<const N: usize>(f: impl FnOnce([Var; N]) -> Rule) -> Rule {
+pub fn exists<const N: usize>(f: impl FnOnce([Var; N]) -> Query) -> Query {
     quantify(f)
 }

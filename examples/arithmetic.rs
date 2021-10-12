@@ -15,7 +15,7 @@ fn main() {
 
     let query = u.parse_query(&["mul($0,$0,$1)"]).unwrap();
     let solver = Solver::new(u.inner());
-    let solutions = solver.query(query);
+    let solutions = solver.query(&query);
 
     for solution in solutions.take(10) {
         println!("SOLUTION:");

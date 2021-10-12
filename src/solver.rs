@@ -53,13 +53,9 @@ impl Solver {
         Solver { rules }
     }
 
-    pub fn query(&self, goals: Vec<ast::AppTerm>) -> SolutionIter {
+    pub fn query(&self, query: &ast::Query) -> SolutionIter {
         // determine how many goal variables we need to allocate
-        let max_var = goals
-            .iter()
-            .map(|goal| goal.count_var_slots())
-            .max()
-            .unwrap_or(0);
+        let max_var = query.count_var_slots();
 
         let mut solution = SolutionState::new(max_var);
 
@@ -68,7 +64,8 @@ impl Solver {
         // initialize solver
         SolutionIter {
             rules: &self.rules,
-            unresolved_goals: goals
+            unresolved_goals: query
+                .goals
                 .iter()
                 .map(|app| solution.terms.term_app(&mut scratch, app, 0))
                 .collect(),

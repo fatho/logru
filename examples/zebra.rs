@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use logru::solver::Solver;
+use logru::solver::DfsSolver;
 
 //use logru::zebra;
 
@@ -55,7 +55,7 @@ fn main() {
     .unwrap();
 
     let query = u.parse_query(&["puzzle($0)"]).unwrap();
-    let solver = Solver::new(u.inner());
+    let solver = DfsSolver::new(u.inner());
     let mut solutions = solver.query(&query);
     let before = Instant::now();
     let solution = solutions.next().unwrap();

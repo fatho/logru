@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use logru::{named::NamedUniverse, solver::Solver};
+use logru::{named::NamedUniverse, solver::DfsSolver};
 
 macro_rules! sanity_check {
     ($computation:expr,$result:expr) => {{
@@ -63,7 +63,7 @@ fn prepare_zebra() -> NamedUniverse {
 
 fn zebra(u: &mut NamedUniverse) -> usize {
     let query = u.parse_query(&["puzzle($0)"]).unwrap();
-    let solver = Solver::new(u.inner());
+    let solver = DfsSolver::new(u.inner());
     let solutions = solver.query(&query);
     sanity_check!(solutions.count(), 1)
 }
@@ -86,35 +86,35 @@ fn prepare_arithmetic() -> NamedUniverse {
 
 fn arithmetic_add(u: &mut NamedUniverse) -> usize {
     let query = u.parse_query(&["add(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),$0)"]).unwrap();
-    let solver = Solver::new(u.inner());
+    let solver = DfsSolver::new(u.inner());
     let solutions = solver.query(&query);
     sanity_check!(solutions.count(), 1)
 }
 
 fn arithmetic_add_reverse(u: &mut NamedUniverse) -> usize {
     let query = u.parse_query(&["add($0,$1,s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z)))))))))))))))))))))))))))))))))))"]).unwrap();
-    let solver = Solver::new(u.inner());
+    let solver = DfsSolver::new(u.inner());
     let solutions = solver.query(&query);
     sanity_check!(solutions.count(), 35)
 }
 
 fn arithmetic_sub(u: &mut NamedUniverse) -> usize {
     let query = u.parse_query(&["add($0,s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z)))))))))))))))))))))))))))))))))))"]).unwrap();
-    let solver = Solver::new(u.inner());
+    let solver = DfsSolver::new(u.inner());
     let solutions = solver.query(&query);
     sanity_check!(solutions.count(), 1)
 }
 
 fn arithmetic_mul(u: &mut NamedUniverse) -> usize {
     let query = u.parse_query(&["mul(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(s(z))))))))))))))))),$0)"]).unwrap();
-    let solver = Solver::new(u.inner());
+    let solver = DfsSolver::new(u.inner());
     let solutions = solver.query(&query);
     sanity_check!(solutions.count(), 1)
 }
 
 fn arithmetic_squares(u: &mut NamedUniverse) -> usize {
     let query = u.parse_query(&["mul($0,$0,$1)"]).unwrap();
-    let solver = Solver::new(u.inner());
+    let solver = DfsSolver::new(u.inner());
     let solutions = solver.query(&query);
     sanity_check!(solutions.take(40).count(), 40)
 }

@@ -1,4 +1,4 @@
-use logru::{named::NamedUniverse, solver::Solver};
+use logru::{named::NamedUniverse, solver::DfsSolver};
 
 fn main() {
     let mut u = NamedUniverse::new();
@@ -14,7 +14,7 @@ fn main() {
         .unwrap();
 
     let query = u.parse_query(&["mul($0,$0,$1)"]).unwrap();
-    let solver = Solver::new(u.inner());
+    let solver = DfsSolver::new(u.inner());
     let solutions = solver.query(&query);
 
     for solution in solutions.take(10) {

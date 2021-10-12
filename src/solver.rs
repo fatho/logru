@@ -10,7 +10,7 @@ use crate::{
 /// Solve queries against the universe using a depth-first-search.
 ///
 /// The caveat is that this approach is not complete, i.e. it might get stuck in infinite recursion
-/// when the rules are left-recursive (TODO: verify).
+/// when the rules are left-recursive.
 pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> {
     // determine how many goal variables we need to allocate
     let max_var = query.count_var_slots();
@@ -25,6 +25,7 @@ pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> 
         unresolved_goals: query
             .goals
             .iter()
+            .rev() // reverse so that the leftmost goal ends up on the top of the stack
             .map(|app| solution.terms.insert_ast_appterm(&mut scratch, app))
             .collect(),
         checkpoints: vec![],
@@ -379,8 +380,9 @@ impl SolutionState {
             // instantiate tail terms
             let (tail, tail_blueprint) = rule.tail();
             let conv_rule_tail = self.terms.instantiate_blueprint(tail_blueprint, var_offset);
-            // and return the updated term IDs
-            Some(tail.iter().map(move |tail| conv_rule_tail(*tail)))
+            // and return the updated term IDs (in reverse order) so that the originally leftmost
+            // goal ends up on the top of the goal stack, and hence is processed next.
+            Some(tail.iter().rev().map(move |tail| conv_rule_tail(*tail)))
         } else {
             None
         }

@@ -9,7 +9,7 @@ macro_rules! sanity_check {
     }};
 }
 
-fn prepare_zebra() -> NamedUniverse {
+fn prepare_zebra(reverse: bool) -> NamedUniverse {
     let mut u = NamedUniverse::new();
 
     u.fact("exists($0,list($0,$1,$2,$3,$4))").unwrap();
@@ -36,28 +36,29 @@ fn prepare_zebra() -> NamedUniverse {
     u.fact("nextTo($2,$3,list($0,$1,$2,$3,$4))").unwrap();
     u.fact("nextTo($3,$4,list($0,$1,$2,$3,$4))").unwrap();
 
-    u.rule(
-        "puzzle($0)",
-        &[
-            "exists(house(red,england,$1,$2,$3),$0)",
-            "exists(house($4,spain,$5,$6,dog),$0)",
-            "exists(house($7,japan,$8,painter,$9),$0)",
-            "exists(house($10,italy,tea,$11,$12),$0)",
-            "first(house($13,norway,$14,$15,$16),$0)",
-            "rightOf(house(green,$17,$18,$19,$20),house(white,$21,$22,$23,$24),$0)",
-            "exists(house($25,$26,$27,photographer,snails),$0)",
-            "exists(house(yellow,$28,$29,diplomat,$30),$0)",
-            "middle(house($31,$32,milk,$33,$34),$0)",
-            "exists(house(green,$35,coffee,$36,$37),$0)",
-            "nextTo(house($13,norway,$14,$15,$16),house(blue,$38,$39,$40,$41),$0)",
-            "exists(house($42,$43,juice,violinist,$44),$0)",
-            "nextTo(house($45,$46,$47,physician,$48),house($49,$50,$51,$52,fox),$0)",
-            "nextTo(house($53,$54,$55,diplomat,$56),house($57,$58,$59,$60,horse),$0)",
-            "exists(house($61,$62,water,$63,$64),$0)",
-            "exists(house($65,$66,$67,$68,zebra),$0)",
-        ],
-    )
-    .unwrap();
+    let mut puzzle_terms = vec![
+        "exists(house(red,england,$1,$2,$3),$0)",
+        "exists(house($4,spain,$5,$6,dog),$0)",
+        "exists(house($7,japan,$8,painter,$9),$0)",
+        "exists(house($10,italy,tea,$11,$12),$0)",
+        "first(house($13,norway,$14,$15,$16),$0)",
+        "rightOf(house(green,$17,$18,$19,$20),house(white,$21,$22,$23,$24),$0)",
+        "exists(house($25,$26,$27,photographer,snails),$0)",
+        "exists(house(yellow,$28,$29,diplomat,$30),$0)",
+        "middle(house($31,$32,milk,$33,$34),$0)",
+        "exists(house(green,$35,coffee,$36,$37),$0)",
+        "nextTo(house($13,norway,$14,$15,$16),house(blue,$38,$39,$40,$41),$0)",
+        "exists(house($42,$43,juice,violinist,$44),$0)",
+        "nextTo(house($45,$46,$47,physician,$48),house($49,$50,$51,$52,fox),$0)",
+        "nextTo(house($53,$54,$55,diplomat,$56),house($57,$58,$59,$60,horse),$0)",
+        "exists(house($61,$62,water,$63,$64),$0)",
+        "exists(house($65,$66,$67,$68,zebra),$0)",
+    ];
+    if reverse {
+        puzzle_terms.reverse();
+    }
+
+    u.rule("puzzle($0)", &puzzle_terms).unwrap();
     u
 }
 
@@ -77,7 +78,7 @@ fn prepare_arithmetic() -> NamedUniverse {
     u.rule("add($0,s($1),s($2))", &["add($0,$1,$2)"]).unwrap();
 
     u.rule("mul($0,z,z)", &["is_natural($0)"]).unwrap();
-    u.rule("mul($0,s($1),$2)", &["add($0,$3,$2)", "mul($0,$1,$3)"])
+    u.rule("mul($0,s($1),$2)", &["mul($0,$1,$3)", "add($0,$3,$2)"])
         .unwrap();
 
     u
@@ -114,10 +115,17 @@ fn arithmetic_squares(u: &mut NamedUniverse) -> usize {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let mut zebra_universe = prepare_zebra();
+    let mut zebra_universe = prepare_zebra(false);
+    let mut reverse_zebra_universe = prepare_zebra(true);
     let mut arithmetic_universe = prepare_arithmetic();
 
+    // For the Zebra puzzle, the execution order makes a huge difference.
+    // The Zebra puzzle with inverted puzzle clauses is many times slower.
+    // These benchmarks therefore ensure our execution order is left alone.
     c.bench_function("zebra", |b| b.iter(|| zebra(&mut zebra_universe)));
+    c.bench_function("zebra reverse", |b| {
+        b.iter(|| zebra(&mut reverse_zebra_universe))
+    });
     c.bench_function("add", |b| {
         b.iter(|| arithmetic_add(&mut arithmetic_universe))
     });

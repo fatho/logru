@@ -82,8 +82,8 @@ fn genealogy() {
         vec![
             // one solution for each path taken
             vec![Some(eve.into())],
-            vec![Some(eve.into())],
             vec![Some(faithe.into())],
+            vec![Some(eve.into())],
             vec![Some(faithe.into())],
         ]
     );

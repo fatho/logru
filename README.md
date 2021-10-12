@@ -2,6 +2,10 @@
 
 **Log**ic programming in **Ru**st.
 
+![ci badge](https://github.com/fatho/logru/actions/workflows/ci.yml/badge.svg)
+
+## Overview
+
 At the heart of this project is a small, efficient Rust library for solving first-order predicate
 logic expressions like they can be found in e.g. Prolog.
 

@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 tracing = "0.1.29"
+logos = "0.12.0"
 
 [dev-dependencies]
 criterion = "0.3.5"

@@ -168,6 +168,25 @@ fn query(state: &mut AppState, args: &str) {
 
 static COMMANDS: &[Command] = &[
     Command {
+        name: ":define",
+        args: "<source>",
+        help: "Insert definitions from the literal source text.",
+        run: &|state, args| {
+            if args.is_empty() {
+                println!("Usage:\n\t:define <source>");
+                return;
+            }
+            match state.universe.load_str(args) {
+                Ok(()) => {
+                    println!("Defined!");
+                }
+                Err(err) => {
+                    println!("Failed to parse: {:?}", err);
+                }
+            }
+        },
+    },
+    Command {
         name: ":help",
         args: "",
         help: "Show this help message.",

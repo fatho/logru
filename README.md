@@ -209,6 +209,7 @@ are:
   steps taken, number of instantiated rules, peak memory usage).
 - Making things even faster by e.g. optimising the occurs check.
 - Named variables in the textual API.
+- Auto-completion in the REPL.
 - Impure predicates (i.e. those having an implementation in Rust and can manipulate the solver state
   directly).
 - Cut and negation (which can probably be implemented given the previous point).

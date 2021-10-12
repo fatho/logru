@@ -1,97 +1,269 @@
+use std::path::PathBuf;
+use std::sync::atomic::{self, AtomicBool};
+use std::sync::Arc;
+use std::time::Instant;
+
 use logru::solver::query_dfs;
 use logru::textual::TextualUniverse;
+use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
-use rustyline::Editor;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::validate::Validator;
+use rustyline::{Editor, Helper};
+
+const HEADER: &str = "
+#===================#
+# LogRu REPL v0.1.0 #
+#===================#
+";
 
 fn main() {
-    // `()` can be used when no completer is required
-    let mut rl = Editor::<()>::new();
-    // if rl.load_history("history.txt").is_err() {
-    //     println!("No previous history.");
-    // }
-    let mut universe = TextualUniverse::default();
-    'outer: loop {
-        let readline = rl.readline("?- ");
-        match readline {
+    // install global collector configured based on RUST_LOG env var.
+    tracing_subscriber::fmt::init();
+
+    println!("{}", HEADER);
+
+    let mut rl = Editor::<AppState>::new();
+
+    // ================= SETUP HISTORY ========================
+    let history_path = get_history_path();
+    if let Some(history_path) = history_path.as_ref() {
+        match rl.load_history(history_path.as_path()) {
+            Ok(()) => tracing::debug!("History loaded"),
+            Err(ReadlineError::Io(ioerr)) if ioerr.kind() == std::io::ErrorKind::NotFound => {
+                tracing::info!("No previous history")
+            }
+            Err(err) => tracing::error!("Failed to load history: {}", err),
+        }
+    }
+
+    // ================= CTRL-C HANDLING ========================
+
+    //rustyline also handles Ctrl-C, but only during prompts. For cancelling long runnign
+    // evaluations, we need our own handling.
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let interrupted_in_handler = interrupted.clone();
+    if let Err(err) =
+        ctrlc::set_handler(move || interrupted_in_handler.store(true, atomic::Ordering::SeqCst))
+    {
+        tracing::error!(
+            "Could not install Ctrl-C handler, evaluations cannot be interrupted: {}",
+            err
+        );
+    }
+
+    // ================= INITIALIZE STATE ========================
+
+    rl.set_helper(Some(AppState::new(interrupted)));
+
+    // ================= ACTUAL REPL ========================
+
+    loop {
+        match rl.readline("?- ") {
             Ok(line) => {
-                rl.add_history_entry(line.as_str());
-                if line.starts_with(':') {
-                    let end_of_command = line.find(' ').unwrap_or_else(|| line.len());
-                    match &line[0..end_of_command] {
-                        ":reset" => {
-                            universe = TextualUniverse::default();
-                        }
-                        ":load" => {
-                            if end_of_command == line.len() {
-                                println!("Usage:\n\t:load <filename>")
-                            }
-                            let filename = &line[end_of_command + 1..];
-                            match std::fs::read_to_string(filename) {
-                                Ok(contents) => match universe.load_str(&contents) {
-                                    Ok(()) => {
-                                        println!("Loaded!");
-                                    }
-                                    Err(err) => {
-                                        println!("Failed to parse: {:?}", err);
-                                    }
-                                },
-                                Err(err) => {
-                                    println!("Failed to load: {}", err);
-                                }
-                            }
-                        }
-                        ":help" => {
-                            println!(
-                                "Available commands:
-            \t:help
-            \t:reset
-            \t:load <filename>"
-                            )
-                        }
-                        other => {
-                            println!("Unknown command: {}", other)
-                        }
-                    }
-                } else {
-                    match universe.prepare_query(&line) {
-                        Ok(query) => {
-                            let solutions = query_dfs(universe.inner(), &query);
-                            for solution in solutions {
-                                println!("Found solution:");
-                                for (index, var) in solution.into_iter().enumerate() {
-                                    print!("  ${} = ", index);
-                                    if let Some(term) = var {
-                                        println!("{}", universe.pretty().term_to_string(&term));
-                                    } else {
-                                        println!("<any>");
-                                    }
-                                }
-                                let readline = rl.readline(".. ");
-                                match readline {
-                                    Ok(_) => continue,
-                                    Err(ReadlineError::Interrupted) => break,
-                                    Err(_) => break 'outer,
-                                }
-                            }
-                            println!("No more solutions.")
-                        }
-                        Err(err) => {
-                            println!("Failed to parse: {:?}", err);
-                        }
-                    }
-                }
+                rl.add_history_entry(&line);
+                dispatch(rl.helper_mut().unwrap(), line)
             }
             Err(ReadlineError::Interrupted) => {
-                println!("not yet implemented, use CTRL+D for quitting");
+                // Intentionally silenced to prevent accidentally closing the REPL due to poor
+                // timing, because Ctrl-C is also used for interrupting computations.
             }
             Err(ReadlineError::Eof) => {
+                println!("^D");
                 break;
             }
             Err(err) => {
-                println!("Error: {:?}", err);
+                tracing::error!("readline: {}", err);
                 break;
             }
         }
     }
-    // rl.save_history("history.txt").unwrap();
+
+    // ================= CLEANUP ========================
+
+    if let Some(history_path) = history_path.as_ref() {
+        if let Err(err) = rl.save_history(history_path) {
+            tracing::error!("Failed to save history: {}", err);
+        } else {
+            tracing::debug!("History saved");
+        }
+    }
+}
+
+struct AppState {
+    universe: TextualUniverse,
+    interrupted: Arc<AtomicBool>,
+}
+
+impl AppState {
+    pub fn new(interrupted: Arc<AtomicBool>) -> Self {
+        Self {
+            universe: TextualUniverse::new(),
+            interrupted,
+        }
+    }
+}
+
+impl Helper for AppState {}
+impl Validator for AppState {}
+impl Highlighter for AppState {}
+impl Hinter for AppState {
+    type Hint = String;
+}
+impl Completer for AppState {
+    type Candidate = String;
+}
+
+fn dispatch(state: &mut AppState, line: String) {
+    if line.starts_with(':') {
+        let (command, args) = line.split_once(' ').unwrap_or((&line, ""));
+        for cmd in COMMANDS {
+            if command == cmd.name {
+                return (cmd.run)(state, args);
+            }
+        }
+        println!("No such command: {}", command);
+    } else {
+        query(state, &line);
+    }
+}
+
+fn query(state: &mut AppState, args: &str) {
+    state.interrupted.store(false, atomic::Ordering::SeqCst);
+    match state.universe.prepare_query(args) {
+        Ok(query) => {
+            let mut solutions = query_dfs(state.universe.inner(), &query);
+            loop {
+                if state.interrupted.load(atomic::Ordering::SeqCst) {
+                    println!("Interrupted!");
+                    break;
+                }
+                match solutions.step() {
+                    logru::solver::Step::Yield => {
+                        let solution = solutions.get_solution();
+                        println!("Found solution:");
+                        for (index, var) in solution.into_iter().enumerate() {
+                            print!("  ${} = ", index);
+                            if let Some(term) = var {
+                                println!("{}", state.universe.pretty().term_to_string(&term));
+                            } else {
+                                println!("<any>");
+                            }
+                        }
+                    }
+                    logru::solver::Step::Continue => continue,
+                    logru::solver::Step::Done => {
+                        println!("No more solutions.");
+                        break;
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            println!("Failed to parse: {:?}", err);
+        }
+    }
+}
+
+static COMMANDS: &[Command] = &[
+    Command {
+        name: ":help",
+        args: "",
+        help: "Show this help message.",
+        run: &|_state, _args| {
+            println!("Available commands:");
+            let max_width = COMMANDS
+                .iter()
+                .map(|cmd| cmd.name.len() + cmd.args.len() + 1)
+                .max()
+                .unwrap_or(0);
+            let spaces: String = " ".repeat(max_width + 2);
+            for cmd in COMMANDS {
+                let width = cmd.name.len() + cmd.args.len() + 1;
+                let num_spaces = max_width - width + 2;
+                println!(
+                    "  {} {}{}{}",
+                    cmd.name,
+                    cmd.args,
+                    &spaces[0..num_spaces],
+                    cmd.help
+                );
+            }
+        },
+    },
+    Command {
+        name: ":load",
+        args: "<filename>",
+        help: "Load definitions from the given file.",
+        run: &|state, args| {
+            if args.is_empty() {
+                println!("Usage:\n\t:load <filename>");
+                return;
+            }
+            match std::fs::read_to_string(args) {
+                Ok(contents) => match state.universe.load_str(&contents) {
+                    Ok(()) => {
+                        println!("Loaded!");
+                    }
+                    Err(err) => {
+                        println!("Failed to parse: {:?}", err);
+                    }
+                },
+                Err(err) => {
+                    println!("Failed to load: {}", err);
+                }
+            }
+        },
+    },
+    Command {
+        name: ":reset",
+        args: "",
+        help: "Forget all previously loaded facts and rules.",
+        run: &|state, _args| {
+            state.universe = TextualUniverse::new();
+        },
+    },
+    Command {
+        name: ":time",
+        args: "<query>",
+        help: "Time the duration of the query execution.",
+        run: &|state, args| {
+            let start = Instant::now();
+            query(state, args);
+            let duration = start.elapsed();
+            println!("Took {:.4}s", duration.as_secs_f64());
+        },
+    },
+];
+
+struct Command {
+    name: &'static str,
+    args: &'static str,
+    help: &'static str,
+    run: &'static (dyn Fn(&mut AppState, &str) + Sync + Send + 'static),
+}
+
+fn get_history_path() -> Option<PathBuf> {
+    if let Some(mut config_path) = dirs::config_dir() {
+        config_path.push("logru");
+        match std::fs::create_dir(&config_path) {
+            Ok(()) => (),
+            Err(ioerr) if ioerr.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(other) => {
+                tracing::error!(
+                    "Failed to create config dir {}: {}",
+                    config_path.display(),
+                    other
+                );
+                return None;
+            }
+        };
+        config_path.push("history.txt");
+        tracing::info!("Using history file: {}", config_path.display());
+        Some(config_path)
+    } else {
+        tracing::error!("Could not determine config folder, history will not be persisted");
+        None
+    }
 }

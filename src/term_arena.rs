@@ -1,4 +1,4 @@
-use crate::{Sym, Var};
+use crate::ast::{self, Sym, Var};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(transparent)]
@@ -55,7 +55,7 @@ impl TermArena {
         let here = self.checkpoint();
         self.terms
             .extend(blueprint.terms.iter().map(|term| match term {
-                Term::Var(var) => Term::Var(Var(var.0 + var_offset)),
+                Term::Var(var) => Term::Var(var.offset(var_offset)),
                 Term::App(func, args) => Term::App(
                     *func,
                     ArgRange {
@@ -73,6 +73,29 @@ impl TermArena {
 
         let term_offset = here.terms;
         move |TermId(old)| TermId(old + term_offset)
+    }
+
+    pub fn term(&mut self, scratch: &mut Vec<TermId>, term: &ast::Term, offset: usize) -> TermId {
+        match term {
+            ast::Term::Var(v) => self.var(v.offset(offset)),
+            ast::Term::App(app) => self.term_app(scratch, app, offset),
+        }
+    }
+
+    pub fn term_app(
+        &mut self,
+        scratch: &mut Vec<TermId>,
+        app: &ast::AppTerm,
+        offset: usize,
+    ) -> TermId {
+        let args_start = scratch.len();
+        for arg in &app.args {
+            let arg_term = self.term(scratch, arg, offset);
+            scratch.push(arg_term);
+        }
+        let out = self.app(app.functor, &scratch[args_start..]);
+        scratch.truncate(args_start);
+        out
     }
 
     pub fn get_arg(&self, arg_id: ArgId) -> TermId {

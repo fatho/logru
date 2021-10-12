@@ -1,4 +1,4 @@
-use logru::named::NamedUniverse;
+use logru::{named::NamedUniverse, solver::Solver};
 
 fn main() {
     let mut u = NamedUniverse::new();
@@ -14,9 +14,10 @@ fn main() {
         .unwrap();
 
     let query = u.parse_query(&["mul($0,$0,$1)"]).unwrap();
-    let solver = u.inner().query(query);
+    let solver = Solver::new(u.inner());
+    let solutions = solver.query(query);
 
-    for solution in solver.take(10) {
+    for solution in solutions.take(10) {
         println!("SOLUTION:");
         for (index, var) in solution.into_iter().enumerate() {
             if let Some(term) = var {

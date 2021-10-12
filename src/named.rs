@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    term::{AppTerm, Term},
-    Rule, Solver, Sym, Universe, Var,
+    ast::{AppTerm, Rule, Sym, Term, Var},
+    universe::Universe,
 };
 
 #[derive(Debug)]
@@ -73,11 +73,6 @@ impl NamedUniverse {
         }
     }
 
-    pub fn query(&mut self, goals_str: &[&str]) -> Result<Solver, ParseError> {
-        let goals = self.parse_query(goals_str)?;
-        Ok(self.universe.query(goals))
-    }
-
     pub fn parse_query(&mut self, goals_str: &[&str]) -> Result<Vec<AppTerm>, ParseError> {
         let mut goals = Vec::new();
 
@@ -105,7 +100,7 @@ impl NamedUniverse {
                         (&term[1..], "")
                     };
                 Ok((
-                    Term::Var(Var(num_part.parse().map_err(|_| ParseError)?)),
+                    Term::Var(Var::from_ord(num_part.parse().map_err(|_| ParseError)?)),
                     rest,
                 ))
             }
@@ -164,7 +159,7 @@ impl NamedUniverse {
 
     pub fn pretty<W: std::fmt::Write>(&self, writer: &mut W, term: &Term) -> std::fmt::Result {
         match term {
-            Term::Var(v) => write!(writer, "${}", v.0),
+            Term::Var(v) => write!(writer, "${}", v.ord()),
             Term::App(app) => self.pretty_app(writer, app),
         }
     }
@@ -177,7 +172,7 @@ impl NamedUniverse {
         if let Some(name) = &self.syms.get(&term.functor) {
             write!(writer, "{}", name)?;
         } else {
-            write!(writer, "<unk:{}>", term.functor.0)?;
+            write!(writer, "<unk:{}>", term.functor.ord())?;
         }
 
         if let Some((first, rest)) = term.args.split_first() {

@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use logru::solver::Solver;
+
 //use logru::zebra;
 
 fn main() {
@@ -52,9 +54,11 @@ fn main() {
     )
     .unwrap();
 
-    let mut solver = u.query(&["puzzle($0)"]).unwrap();
+    let query = u.parse_query(&["puzzle($0)"]).unwrap();
+    let solver = Solver::new(u.inner());
+    let mut solutions = solver.query(query);
     let before = Instant::now();
-    let solution = solver.next().unwrap();
+    let solution = solutions.next().unwrap();
     let duration = before.elapsed();
 
     for var in solution {

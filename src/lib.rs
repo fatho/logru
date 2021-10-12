@@ -1,7 +1,6 @@
 pub mod named;
 pub mod term;
 pub mod term_arena;
-pub mod union_find;
 
 use term::*;
 use term_arena::TermArena;

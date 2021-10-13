@@ -171,7 +171,7 @@ of the `puzzle` rule are reversed.
 For both SWI Prolog and Logru, this makes the Puzzle a lot slower to solve (not surprising since
 AFAIK SWI Prolog uses the same search order).
 
-While Logru takes about 60ms to solve the Puzzle and to conclude that there are no further
+While Logru takes about 52ms to solve the Puzzle and to conclude that there are no further
 solutions, Prolog takes about 25ms to find the solution and an additional 6ms to rule out any
 further solutions for a total of 31ms.
 

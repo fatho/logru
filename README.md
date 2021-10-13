@@ -2,7 +2,7 @@
 
 **Log**ic programming in **Ru**st.
 
-![ci badge](https://github.com/fatho/logru/actions/workflows/ci.yml/badge.svg)
+![ci badge](https://github.com/fatho/logru/actions/workflows/ci.yml/badge.svg) [![crates.io badge](https://img.shields.io/crates/v/logru)](https://crates.io/crates/logru) [![docs.rs badge](https://img.shields.io/docsrs/logru)](https://docs.rs/logru/)
 
 ## Overview
 

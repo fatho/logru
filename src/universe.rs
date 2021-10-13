@@ -1,10 +1,21 @@
+//! # Universe
+//!
+//! The universe is the data store that holds all the facts and rules that the solver will use for
+//! proving queries. See the [Universe] type for more information.
+
 use crate::{
     ast::*,
     term_arena::{self, TermArena},
 };
 
-/// The Universe is a collection of symbols, facts and rules. A solver can be used for running
-/// queries against the universe.
+/// The Universe is a collection of symbols, facts and rules.
+///
+/// A solver, like the built-in [query_dfs](crate::query_dfs) can be used for running queries
+/// against the universe.
+///
+/// # Example
+///
+/// See the [top-level example](crate#example).
 #[derive(Debug)]
 pub struct Universe {
     /// next unallocated symbol ID
@@ -24,6 +35,12 @@ impl Universe {
     }
 
     /// Generate a fresh symbol ID in this universe.
+    ///
+    /// # Notes
+    ///
+    /// While it is possible to create symbols directly from ordinals using [`Sym::from_ord`], using
+    /// those may cause the solver to panic or return invalid results if the ordinal hasn't been
+    /// previously obtained by calling [`Sym::ord`] on a symbol allocated in this universe.
     pub fn alloc_symbol(&mut self) -> Sym {
         let sym = Sym::from_ord(self.fresh_symbol);
         self.fresh_symbol += 1;
@@ -31,6 +48,8 @@ impl Universe {
     }
 
     /// Generate a range of fresh symbol IDs in this universe.
+    ///
+    /// See [Universe::alloc_symbol] for general notes about symbol allocation.
     pub fn alloc_symbols(&mut self, count: usize) -> impl Iterator<Item = Sym> {
         let fresh_start = self.fresh_symbol;
         self.fresh_symbol += count;
@@ -54,6 +73,9 @@ impl Universe {
     }
 
     /// Returns the set of compiled rules that are more efficient for a solver to process.
+    ///
+    /// This function is only needed for writing your own solvers that need access to the more
+    /// efficient lookup representation maintained internally by the universe.
     pub fn compiled_rules(&self) -> &CompiledRuleDb {
         &self.compiled_rules
     }
@@ -65,9 +87,10 @@ impl Default for Universe {
     }
 }
 
-/// Internal helper structure of the DfsSolver for storing rules in a more efficient way during
-/// solving. Having them precomputed as `TermArena`s makes instantiating the rules faster since we
-/// can linearly copy the arena contents rather than having to traverse a bunch of pointers.
+/// Auxilliary data structure exposed for use in custom solvers.
+///
+/// In contrast to the pointer-heavy layout of the regular [Rule](crate::ast::Rule) AST, this type
+/// contains preallocated [crate::term_arena::TermArena]s that are faster to instantiate.
 #[derive(Debug, Clone)]
 pub struct CompiledRule {
     /// Arena containing the head terms.
@@ -129,8 +152,7 @@ impl CompiledRule {
     }
 }
 
-/// Auxilliary data structure for holding a set of `CompiledRule`s in a way that is efficient to use
-/// during solving.
+/// Auxilliary data structure for efficiently looking up [CompiledRule]s based on their head symbol.
 #[derive(Debug)]
 pub struct CompiledRuleDb {
     /// The set of rules indexed by the symbol ID of the head predicate.

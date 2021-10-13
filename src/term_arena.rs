@@ -1,23 +1,44 @@
+//! # Arena allocation for terms
+//!
+//! This module provides an alternative representation for logic terms that is more efficient to
+//! work with in the solver than the one from the [`ast`](crate::ast) module.
+//!
+//! It's not used for the "external" interface because while being more efficient in certain cases,
+//! the interface is also more cumbersome to use. As a trade-off, conversion happens at interface
+//! boundaries of the solver.
+//!
+//! The module is exported nontheless because it can be useful when writing custom solvers.
+//!
+//! See the [TermArena] type for a usage example.
+
 use crate::ast::{self, Sym, Var};
 
 /// Handle for a term stored inside a term arena.
+///
+/// See [`TermArena::get_term`].
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(transparent)]
 pub struct TermId(usize);
 
 /// Handle for an argument of an application term stored inside a term arena.
+///
+/// See [`TermArena::get_arg`].
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(transparent)]
 pub struct ArgId(usize);
 
-/// Arena allocator for storing terms in a contiguous block of memory indexed by handles rather than
-/// using pointers. Additionally, it supports fast stack-based deallocation.
+/// Arena allocator for storing terms
+///
+/// It stores terms in a contiguous block of memory indexed by handles rather than using pointers.
+/// Additionally, it supports fast stack-based deallocation.
 ///
 /// # Notes
 ///
 /// There are no safeguards against using `TermId`s from one arena with another arena. But since the
-/// implementation only uses safe Rust, nothing really bad will happen in that case. Still, things
-/// might panic or just silently compute the wrong result.
+/// implementation only uses safe Rust, nothing *really* bad[^reallybad] will happen in that case.
+/// Still, things might panic or just silently compute the wrong result.
+///
+/// [^reallybad]: Like [nasal demons](https://en.wikipedia.org/wiki/Undefined_behavior).
 ///
 /// # Examples
 ///
@@ -102,6 +123,37 @@ impl TermArena {
     ///
     /// This function returns a closure that can be used for translating `TermId`s that were created
     /// from the blueprint into `TermId`s that can be used with this arena.
+    ///
+    /// # Example
+    ///
+    /// As an example, let's instantiate the term that was built in the [type-level
+    /// exampe](TermArena#example).
+    ///
+    /// ```
+    /// # use logru::term_arena::*;
+    /// # use logru::ast::{Sym,Var};
+    /// # let mut arena = TermArena::new();
+    /// # let foo = Sym::from_ord(0);
+    /// # let bar = Sym::from_ord(1);
+    /// # let baz = Sym::from_ord(2);
+    /// # let v0 = Var::from_ord(0);
+    /// # let v1 = Var::from_ord(1);
+    /// # let t_bar = arena.app(bar, &[]);
+    /// # let t_v0 = arena.var(v0);
+    /// # let t_baz = arena.app(baz, &[t_v0]);
+    /// # let t_v1 = arena.var(v1);
+    /// # let t_foo = arena.app(foo, &[t_bar, t_baz, t_v1]);
+    /// let mut new_arena = TermArena::new();
+    /// let convert_id1 = new_arena.instantiate_blueprint(&arena, 10);
+    /// let convert_id2 = new_arena.instantiate_blueprint(&arena, 20);
+    /// // Verify that we now have two instances of `t_v0` in our new arena with different
+    /// // variable offsets applied to them:
+    /// assert_eq!(new_arena.get_term(convert_id1(t_v0)), Term::Var(v0.offset(10)));
+    /// assert_eq!(new_arena.get_term(convert_id2(t_v0)), Term::Var(v0.offset(20)));
+    /// // Verify that the two copies of the foo term are not identical
+    /// assert_ne!(new_arena.get_term(convert_id1(t_foo)), new_arena.get_term(convert_id2(t_foo)));
+    /// ```
+    ///
     pub fn instantiate_blueprint(
         &mut self,
         blueprint: &TermArena,
@@ -209,8 +261,10 @@ pub struct Checkpoint {
     args: usize,
 }
 
-/// A (possibly empty) range of arguments of an application term. Can be iterated over for obtaining
-/// `ArgId`s that can be used for looking up argument terms.
+/// A (possibly empty) range of arguments of an application term.
+///
+/// It can be iterated over for obtaining [`ArgId`]s that can be used for looking up argument terms
+/// in the arena using [`TermArena::get_arg`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ArgRange {
     start: usize,

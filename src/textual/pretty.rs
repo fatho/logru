@@ -2,6 +2,8 @@ use crate::ast::{AppTerm, Query, Rule, Term};
 
 use super::NamedUniverse;
 
+/// A pretty-printer for terms using the Prolog-like syntax of the
+/// [TextualUniverse](super::TextualUniverse).
 pub struct Prettifier<'u> {
     universe: &'u NamedUniverse,
 }

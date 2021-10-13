@@ -1,3 +1,10 @@
+//! # An abstract syntax tree for logic terms
+//!
+//! This module defines a bunch of types for representing logic terms used by the solver.
+//!
+//! The root nodes are [Rule] for representing facts and rules for deriving facts, and [Query] for
+//! representing queries against a set of rules.
+
 /// A symbol in a logic expression, e.g. `foo` and `bar` in `foo(bar, _)`. It can refer to both a
 /// predicate and data.
 ///
@@ -6,36 +13,57 @@
 pub struct Sym(usize);
 
 impl Sym {
+    /// Return the ordinal number of this symbol.
+    ///
+    /// This function can be useful for lookup tables that are indexed by symbols.
     #[inline(always)]
     pub fn ord(self) -> usize {
         self.0
     }
 
+    /// Build a symbol from its ordinal number.
+    ///
+    /// Inverse of [`Sym::ord`].
     #[inline(always)]
     pub fn from_ord(ord: usize) -> Sym {
         Sym(ord)
     }
 }
 
-/// A variable in a logic expression, represented by a numeric ID. While in principle, these IDs can
-/// be chosen freely, in practice, they should be as small as possible, because the solver uses them
-/// as indexes into arrays and holes in the ID range are wasted space.
+/// A variable in a logic expression, represented by a numeric ID.
+///
+/// While in principle, these IDs can be chosen freely, in practice, they should be as small as
+/// possible, because the solver uses them as indexes into arrays and holes in the ID range are
+/// wasted space.
+///
+/// When using the [`forall`] and [`exists`] helpers for constructing rules and queries, then they
+/// will already choose the smallest possible variable IDs (i.e. the range `0..count`).
+///
+/// For manually contructing variables, use [`Var::from_ord`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Var(usize);
 
 impl Var {
+    /// Return the ordinal number of this variable.
+    ///
+    /// This function can be useful for lookup tables that are indexed by variables.
     #[inline(always)]
     pub fn ord(self) -> usize {
         self.0
     }
 
+    /// Build a variable from its ordinal number.
+    ///
+    /// Inverse of [`Var::ord`].
     #[inline(always)]
     pub fn from_ord(ord: usize) -> Var {
         Var(ord)
     }
 
-    /// Apply an offset to the variable's ID. This is used for quickly generating fresh variables
-    /// when rules need to be instantiated.
+    /// Apply an offset to the variable's ID.
+    ///
+    /// This is used for quickly generating fresh variables when rules need to be instantiated.
+    /// `v.offset(n)` is equivalent to `Var::from_ord(v.ord() + n)`.
     pub fn offset(self, offset: usize) -> Var {
         Var(self.0 + offset)
     }
@@ -44,15 +72,18 @@ impl Var {
 /// Representation of a logic term.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Term {
-    /// It can be a variable.
+    /// A variable term.
     Var(Var),
-    /// Or an application term.
+    /// An application term, see [`AppTerm`].
     App(AppTerm),
 }
 
 impl Term {
     /// Count the number of variable slots needed for storing the variable assignments for this
     /// term.
+    ///
+    /// If the highest variable ordinal ([`Var::ord`]) of any variable occurring in this term is
+    /// `n`, then it will return `n + 1`.
     pub fn count_var_slots(&self) -> usize {
         match self {
             Term::Var(v) => v.0 + 1,
@@ -79,8 +110,7 @@ impl From<AppTerm> for Term {
     }
 }
 
-/// An application term, i.e. a term of the form `functor(arg0, arg1, ...)`. It can also have no
-/// arguments.
+/// An application term, i.e. a term of the form `functor(arg0, arg1, ...)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppTerm {
     /// The functor being applied.
@@ -103,8 +133,9 @@ impl AppTerm {
         Self { functor, args }
     }
 
-    /// Count the number of variable slots needed for storing the variable assignments for this
-    /// term.
+    /// Count the number of variable slots needed to accommodate for all variables in this term.
+    ///
+    /// See [`Term::count_var_slots`].
     pub fn count_var_slots(&self) -> usize {
         self.args
             .iter()
@@ -193,6 +224,7 @@ impl Rule {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Query {
+    /// The conunctive goals that need to be proven as part of this query.
     pub goals: Vec<AppTerm>,
 }
 
@@ -222,6 +254,9 @@ impl Query {
         self
     }
 
+    /// Count the number of variable slots needed to accommodate for all variables in this query.
+    ///
+    /// See [`Term::count_var_slots`].
     pub fn count_var_slots(&self) -> usize {
         self.goals
             .iter()
@@ -241,13 +276,16 @@ fn quantify<R, const N: usize>(f: impl FnOnce([Var; N]) -> R) -> R {
 }
 
 /// A universal quantification that can be used for more naturally describing the creation of rules.
-/// See the example for the `Rule` type.
+///
+/// See the example for the [`Rule`] type.
 pub fn forall<const N: usize>(f: impl FnOnce([Var; N]) -> Rule) -> Rule {
     quantify(f)
 }
 
 /// An existential quantification that can be used for more naturally describing the creation of
-/// queries. See the example for the `Query` type.
+/// queries.
+///
+/// See the example for the [`Query`] type.
 pub fn exists<const N: usize>(f: impl FnOnce([Var; N]) -> Query) -> Query {
     quantify(f)
 }

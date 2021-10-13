@@ -1,3 +1,8 @@
+//! # A DFS solver for queries
+//!
+//! This module contains the bits and pieces necessary for proving queries in a [crate::Universe].
+//! For now, Logru only supports a single solving strategy, [query_dfs].
+
 #[cfg(test)]
 mod test;
 
@@ -9,8 +14,11 @@ use crate::{
 
 /// Solve queries against the universe using a depth-first-search.
 ///
-/// The caveat is that this approach is not complete, i.e. it might get stuck in infinite recursion
-/// when the rules are left-recursive.
+/// A depth-first search is very efficient for finite search spaces. The caveat is that this
+/// approach is not complete, i.e. it might recurse endlessly in infinite search spaces where the
+/// rules are left-recursive.
+///
+/// For a usage example, see the [top-level example](crate#example).
 pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> {
     // determine how many goal variables we need to allocate
     let max_var = query.count_var_slots();
@@ -34,6 +42,11 @@ pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> 
 }
 
 /// Iterator over all solutions for a given query.
+///
+/// There are two ways of using this type to explore the solution space:
+/// 1. Via the provided iterator implementation which returns all valid solutions to the query.
+/// 2. Using the [SolutionIter::step] method which returns after each intermediate step as well.
+///    This can be useful for implementing cancellation.
 pub struct SolutionIter<'s> {
     /// The rule database that can be used for resolving queries.
     rules: &'s CompiledRuleDb,
@@ -62,20 +75,68 @@ struct Checkpoint {
 }
 
 /// Status of the solution iterator after performing a step.
+///
+/// See [SolutionIter::step] for a usage example.
 pub enum Step {
-    /// The solver found a solution. Call `Solver::get_solution` for obtaining the actual variable
-    /// assignment.
+    /// The solver found a solution. Call [SolutionIter::get_solution] for obtaining the actual
+    /// variable assignment.
     Yield,
-    /// The solver made progress but there is no solution yet. Call `Solver::step` again.
+    /// The solver made progress but there is no solution yet. Call [SolutionIter::step] again.
     Continue,
     /// The solver exhausted the solution space.
     Done,
 }
 
 impl<'s> SolutionIter<'s> {
-    /// Perform a single solver step. Can be used as more fine-grained means for traversing the
-    /// solution space as opposed to using the iterator interface, as the process could be cancelled
-    /// at any choice point, not just when a solution was finally found.
+    /// Perform a single solver step.
+    ///
+    /// This method can be used as more fine-grained means for traversing the solution space as
+    /// opposed to using the iterator interface, as the process could be cancelled at any choice
+    /// point, not just when a solution was finally found.
+    ///
+    /// # Example
+    ///
+    /// The following snippet using the definitions from the [top-level Example][crate#example]
+    /// section will enumerate all natural numbers (and thus never finish).
+    ///
+    /// ```
+    /// # use logru::ast::{self, Rule};
+    /// # use logru::solver::Step;
+    /// # let mut u = logru::Universe::new();
+    /// # let s = u.alloc_symbol();
+    /// # let z = u.alloc_symbol();
+    /// # let is_natural = u.alloc_symbol();
+    /// # let add = u.alloc_symbol();
+    /// #
+    /// # u.add_rule(Rule::fact(is_natural, vec![z.into()]));
+    /// # u.add_rule(ast::forall(|[p]| {
+    /// #     Rule::fact(is_natural, vec![ast::app(s, vec![p.into()])])
+    /// #     .when(is_natural, vec![p.into()])
+    /// # }));
+    /// # let query = ast::exists(|[x]| {
+    /// #     ast::Query::new(
+    /// #         add,
+    /// #         vec![
+    /// #             x.into(),
+    /// #             ast::app(s, vec![ast::app(s, vec![z.into()])]),
+    /// #             ast::app(s, vec![ast::app(s, vec![ast::app(s, vec![z.into()])])]),
+    /// #         ],
+    /// #     )
+    /// # });
+    /// # use std::sync::Arc;
+    /// # use std::sync::atomic::{self, AtomicBool};
+    /// let interrupted = Arc::new(AtomicBool::new(false));
+    /// // Pass `interrupted` off to somewhere else where it can be set when the search is cancelled
+    /// # interrupted.store(true, atomic::Ordering::SeqCst);
+    /// let mut solutions = logru::query_dfs(&u, &query);
+    /// while ! interrupted.load(atomic::Ordering::SeqCst) {
+    ///     match solutions.step() {
+    ///         Step::Yield => println!("{:?}", solutions.get_solution()),
+    ///         Step::Continue => continue,
+    ///         Step::Done => break,
+    ///     }
+    /// }
+    /// ```
     pub fn step(&mut self) -> Step {
         // When there are still unresolved goals left, we create a choice checkpoint for the
         // top-most one.
@@ -113,8 +174,25 @@ impl<'s> SolutionIter<'s> {
         }
     }
 
-    /// Obtain a copy of the current assignment of the goal variables. When called right after
-    /// `step` returned `Step::Yield`, then this is a valid solution to the query.
+    /// Obtain a copy of the current assignment of the goal variables.
+    ///
+    /// Usually, this function should be called right after `step` returned `Step::Yield`. In taht
+    /// case, it will return a valid solution to the query. It may be called at any point though,
+    /// but the assignment will be incomplete and might not even be a part of a valid solution.
+    ///
+    /// The indexes in the resulting vector correspond to the [ordinals](crate::ast::Var::ord) of
+    /// the goal variables, i.e. the assignment for a variable `x: Var` is stored at index
+    /// `x.ord()`.
+    ///
+    /// Note that even in valid solutions, not all variables need to have an assignment. For
+    /// example, given the rule
+    ///
+    /// ```prolog
+    /// anything(X).
+    /// ```
+    ///
+    /// the query `anything(X)` will be true for any `X`, hence even a valid solution won't have an
+    /// assignment for this variable.
     pub fn get_solution(&self) -> Vec<Option<ast::Term>> {
         self.solution.get_solution()
     }

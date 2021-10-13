@@ -11,8 +11,10 @@ in
       rustfmt
       clippy
       cargo-audit
+      cargo-criterion
       cargo-edit
       cargo-flamegraph
+      gnuplot  # for criterion
 
       # Nix tools
       niv

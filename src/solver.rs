@@ -267,6 +267,8 @@ struct SolutionState {
     goal_vars: usize,
     /// Arena from which solution terms are allocated.
     terms: TermArena,
+    // Temporary scratch memory used for computing the occurs check.
+    occurs_stack: Vec<term_arena::TermId>,
 }
 
 struct SolutionCheckpoint {
@@ -283,6 +285,7 @@ impl SolutionState {
             variables: vec![None; goal_vars],
             goal_vars,
             terms: TermArena::new(),
+            occurs_stack: Vec::new(),
         }
     }
 
@@ -308,11 +311,27 @@ impl SolutionState {
     }
 
     /// Check whether the variable occurs inside the given term.
-    fn occurs(&self, var: Var, term: term_arena::TermId) -> bool {
-        match self.terms.get_term(term) {
-            term_arena::Term::Var(v) => v == var,
-            term_arena::Term::App(_, mut args) => {
-                args.any(|arg_id| self.occurs(var, self.terms.get_arg(arg_id)))
+    fn occurs(&mut self, var: Var, mut term: term_arena::TermId) -> bool {
+        loop {
+            match self.terms.get_term(term) {
+                term_arena::Term::Var(v) => {
+                    if v == var {
+                        // Found the variable, we clear the stack for an early exit
+                        self.occurs_stack.clear();
+                        return true;
+                    }
+                }
+                term_arena::Term::App(_, args) => {
+                    let terms = &self.terms;
+                    self.occurs_stack
+                        .extend(args.map(|arg_id| terms.get_arg(arg_id)))
+                }
+            }
+            match self.occurs_stack.pop() {
+                // More terms to check
+                Some(next) => term = next,
+                // No more terms to check, variable does not occur
+                None => return false,
             }
         }
     }

@@ -9,7 +9,8 @@
 At the heart of this project is a small, efficient Rust library for solving first-order predicate
 logic expressions like they can be found in e.g. Prolog.
 
-Additionally, there is a REPL executable for interactively playing around with the implementation.
+Additionally, there is a [REPL example](examples/repl.rs) for interactively playing around with the
+implementation.
 
 Compared to Prolog, it currently lacks some features though. Most notable, there are
 - no negation or cut,

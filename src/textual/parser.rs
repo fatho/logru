@@ -49,10 +49,13 @@ impl<'a> TokenStream<'a> {
     }
 }
 
+/// A parse error originating from [`Parser`].
 #[derive(Debug)]
 pub struct ParseError {
-    span: Span,
-    kind: ParseErrorKind,
+    /// The range in the source text where the error occurred.
+    pub span: Span,
+    /// The type of error that occurred.
+    pub kind: ParseErrorKind,
 }
 
 impl ParseError {
@@ -61,13 +64,19 @@ impl ParseError {
     }
 }
 
+/// The various types of parse errors reported by [`Parser`].
 #[derive(Debug)]
 pub enum ParseErrorKind {
+    /// The parser reached the end of the input, but expected more tokens to follow.
     UnexpectedEof,
+    /// The parser encountered a token that doesn't belong in that place.
     UnexpectedToken,
+    /// The parser encountered more tokens after the input should have ended.
     ExpectedEof,
 }
 
+/// A parser for terms using the Prolog-like syntax of the
+/// [TextualUniverse](super::TextualUniverse).
 pub struct Parser<'u> {
     universe: &'u mut NamedUniverse,
 }

@@ -173,7 +173,7 @@ AFAIK SWI Prolog uses the same search order).
 
 While Logru takes about 60ms to solve the Puzzle and to conclude that there are no further
 solutions, Prolog takes about 25ms to find the solution and an additional 6ms to rule out any
-further solutions for a total of 31s.
+further solutions for a total of 31ms.
 
 A large portion of that difference is apparently caused by the occurs check, which seems to be off
 by default in Prolog. In a version of Logru compiled without occurs check, the same puzzle is solved

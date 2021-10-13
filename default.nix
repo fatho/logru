@@ -7,7 +7,7 @@
     { bash, lib, nix-gitignore, rustPlatform }:
     rustPlatform.buildRustPackage {
       pname = "logru";
-      version = "0.1.0";
+      version = "0.2.0";
 
       src =
         let
@@ -34,7 +34,7 @@
         in
           blacklistedSrc;
 
-      cargoSha256 = "14sbb60vaqss2m87vjg36ljsci6n30qyjzsfh08hlcvw9wkrby1d";
+      cargoSha256 = "179xxf2m4x4irmr57k69gai8lrmadw1qm50kinpfnrzmxmys1w54";
 
       meta = with lib; {
           description = "Logic programming in Rust";

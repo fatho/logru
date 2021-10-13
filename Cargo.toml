@@ -1,6 +1,10 @@
 [package]
 name = "logru"
 version = "0.2.0"
+description = "A small, embeddable and fast interpreter for a subset of Prolog."
+keywords = ["prolog", "logic-programming", "first-order-logic"]
+categories = ["compilers", "algorithms", "mathematics"]
+repository = "https://github.com/fatho/logru/"
 authors = ["Fabian Thorand <f.thorand@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"

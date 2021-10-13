@@ -5,6 +5,13 @@ authors = ["Fabian Thorand <f.thorand@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
 
+include = [
+    "README.md",
+    "testfiles/*",
+    "**/*.rs",
+    "Cargo.toml",
+]
+
 [dependencies]
 logos = "0.12.0"
 

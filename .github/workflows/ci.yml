@@ -15,5 +15,5 @@ jobs:
         with:
           name: fatho
           signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-      - run: nix build --print-build-logs --keep-going
+      - run: nix --extra-experimental-features nix-command build --print-build-logs --keep-going --file default.nix
       - run: nix-shell --run "echo OK"

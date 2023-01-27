@@ -12,3 +12,4 @@ flamegraph.svg
 
 # Nix
 /result
+.direnv

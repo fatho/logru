@@ -20,10 +20,10 @@ include = [
 logos = "0.12.0"
 
 [dev-dependencies]
-criterion = { version = "0.3.5", features = ["html_reports"] }
+criterion = { version = "0.4.0", features = ["html_reports"] }
 ctrlc = "3.2.2"
 dirs = "4.0"
-rustyline = "9.1.2"
+rustyline = "10.1.1"
 tracing = "0.1.35"
 tracing-subscriber = "0.3.11"
 

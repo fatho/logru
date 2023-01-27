@@ -24,7 +24,7 @@ fn main() {
 
     println!("{}", HEADER);
 
-    let mut rl = Editor::<AppState>::new();
+    let mut rl = Editor::<AppState>::new().expect("Failed to initialize REPL");
 
     // ================= SETUP HISTORY ========================
     let history_path = get_history_path();

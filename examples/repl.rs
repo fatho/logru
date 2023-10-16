@@ -9,6 +9,7 @@ use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
+use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Editor, Helper};
 
@@ -24,7 +25,7 @@ fn main() {
 
     println!("{}", HEADER);
 
-    let mut rl = Editor::<AppState>::new().expect("Failed to initialize REPL");
+    let mut rl = Editor::<AppState, DefaultHistory>::new().expect("Failed to initialize REPL");
 
     // ================= SETUP HISTORY ========================
     let history_path = get_history_path();
@@ -62,7 +63,7 @@ fn main() {
     loop {
         match rl.readline("?- ") {
             Ok(line) => {
-                rl.add_history_entry(&line);
+                rl.add_history_entry(&line).expect("Couldn't add history");
                 dispatch(rl.helper_mut().unwrap(), line)
             }
             Err(ReadlineError::Interrupted) => {

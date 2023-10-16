@@ -23,13 +23,10 @@ pub enum Token {
     #[regex(r"\$[0-9]+", lex_variable)]
     Variable(usize),
 
-    // Logos requires one token variant to handle errors,
-    // it can be named anything you wish.
-    #[error]
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
     #[regex(r"[ \t\n\f]+", logos::skip)]
-    Error,
+    Whitespace,
 }
 
 fn lex_variable(lex: &mut Lexer<Token>) -> Option<usize> {

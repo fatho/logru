@@ -19,11 +19,11 @@ impl<'a> TokenStream<'a> {
     }
 
     #[allow(unused)]
-    pub fn peek(&mut self) -> Option<(Token, Span)> {
+    pub fn peek(&mut self) -> Option<(Result<Token, ()>, Span)> {
         self.lexer.peek().cloned()
     }
 
-    pub fn next(&mut self) -> Option<(Token, Span)> {
+    pub fn next(&mut self) -> Option<(Result<Token, ()>, Span)> {
         self.lexer.next()
     }
 
@@ -31,12 +31,12 @@ impl<'a> TokenStream<'a> {
         self.lexer.next();
     }
 
-    pub fn peek_token(&mut self) -> Option<Token> {
+    pub fn peek_token(&mut self) -> Option<Result<Token, ()>> {
         self.lexer.peek().map(|(tok, _)| tok).cloned()
     }
 
     #[allow(unused)]
-    pub fn next_token(&mut self) -> Option<Token> {
+    pub fn next_token(&mut self) -> Option<Result<Token, ()>> {
         self.lexer.next().map(|(tok, _)| tok)
     }
 
@@ -118,11 +118,11 @@ impl<'a> Parser<'a> {
     fn parse_rule(&mut self, tokens: &mut TokenStream) -> Result<Rule, ParseError> {
         let head = self.parse_appterm(tokens)?;
         let tail = match tokens.peek_token() {
-            Some(Token::ImpliedBy) => {
+            Some(Ok(Token::ImpliedBy)) => {
                 tokens.advance();
                 self.parse_conjunction1(tokens)?
             }
-            Some(Token::Period) => {
+            Some(Ok(Token::Period)) => {
                 tokens.advance();
                 Vec::new()
             }
@@ -139,11 +139,11 @@ impl<'a> Parser<'a> {
         let mut goals = vec![self.parse_appterm(tokens)?];
         loop {
             match tokens.peek_token() {
-                Some(Token::Comma) => {
+                Some(Ok(Token::Comma)) => {
                     tokens.advance();
                     goals.push(self.parse_appterm(tokens)?);
                 }
-                Some(Token::Period) => {
+                Some(Ok(Token::Period)) => {
                     tokens.advance();
                     break;
                 }
@@ -171,7 +171,7 @@ impl<'a> Parser<'a> {
         expected: Token,
     ) -> Result<Span, ParseError> {
         if let Some((actual, span)) = tokens.next() {
-            if actual == expected {
+            if actual == Ok(expected) {
                 Ok(span)
             } else {
                 Err(ParseError::new(span, ParseErrorKind::UnexpectedToken))
@@ -184,15 +184,15 @@ impl<'a> Parser<'a> {
     fn parse_appterm(&mut self, tokens: &mut TokenStream) -> Result<AppTerm, ParseError> {
         let functor = self.parse_symbol(tokens)?;
         let mut args = vec![];
-        if let Some(Token::LParen) = tokens.peek_token() {
+        if let Some(Ok(Token::LParen)) = tokens.peek_token() {
             tokens.advance();
             loop {
                 args.push(self.parse_term(tokens)?);
                 match tokens.peek_token() {
-                    Some(Token::Comma) => {
+                    Some(Ok(Token::Comma)) => {
                         tokens.advance();
                     }
-                    Some(Token::RParen) => {
+                    Some(Ok(Token::RParen)) => {
                         tokens.advance();
                         break;
                     }
@@ -211,7 +211,7 @@ impl<'a> Parser<'a> {
 
     fn parse_term(&mut self, tokens: &mut TokenStream) -> Result<Term, ParseError> {
         match tokens.peek_token() {
-            Some(Token::Variable(index)) => {
+            Some(Ok(Token::Variable(index))) => {
                 tokens.advance();
                 Ok(Term::Var(Var::from_ord(index)))
             }

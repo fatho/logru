@@ -52,6 +52,7 @@ pub use self::{parser::Parser, pretty::Prettifier};
 pub struct NamedUniverse {
     names: HashMap<String, Sym>,
     syms: HashMap<Sym, String>,
+    vars: Vec<String>,
     universe: Universe,
 }
 
@@ -61,6 +62,7 @@ impl NamedUniverse {
         Self {
             names: HashMap::new(),
             syms: HashMap::new(),
+            vars: Vec::new(),
             universe: Universe::new(),
         }
     }
@@ -87,7 +89,27 @@ impl NamedUniverse {
     pub fn symbol_name(&self, sym: Sym) -> Option<&str> {
         self.syms.get(&sym).map(|s| s.as_str())
     }
+    
+    /// Create a new variable or return an existing variable with that name
+    ///
+    /// Each variable with a given name can exist only once. When an existing name is passed to this
+    /// function, the existing variable identifier is returned.
+    pub fn variable(&mut self, name: &str) -> usize {
+        let position = self.vars.iter().position(|v| v == name);
+        if let Some(position) = position {
+            position
+        } else {
+            let position = self.vars.len();
+            self.vars.push(name.into());
+            position
+        }
+    }
 
+    /// Look up the name of a variable.
+    pub fn variable_name(&self, var: usize) -> Option<&str> {
+        self.vars.get(var).map(String::as_str)
+    }
+    
     /// Get mutable access to the underlying universe.
     pub fn inner_mut(&mut self) -> &mut Universe {
         &mut self.universe

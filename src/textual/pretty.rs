@@ -33,7 +33,7 @@ impl<'a> Prettifier<'a> {
 
     pub fn pretty<W: std::fmt::Write>(&self, writer: &mut W, term: &Term) -> std::fmt::Result {
         match term {
-            Term::Var(v) => write!(writer, "${}", v.ord()),
+            Term::Var(v) => write!(writer, "${}", self.universe.variable_name(v.ord()).unwrap_or("?")),
             Term::App(app) => self.pretty_app(writer, app),
         }
     }

@@ -213,7 +213,7 @@ impl<'a> Parser<'a> {
         match tokens.peek_token() {
             Some(Ok(Token::Variable(index))) => {
                 tokens.advance();
-                Ok(Term::Var(Var::from_ord(index)))
+                Ok(Term::Var(Var::from_ord(self.universe.variable(&index))))
             }
             _ => self.parse_appterm(tokens).map(Term::App),
         }
@@ -244,6 +244,21 @@ fn test_query_parsing() {
     query_roundtrip_test("grandparent(bob, $0), female($0).");
 
     query_roundtrip_test("add(s(s(s(s(z)))), s(s(z)), $0).");
+}
+
+#[test]
+fn test_query_parsing_uppercase() {
+    query_roundtrip_test("grandparent(bob, $A).");
+    query_roundtrip_test("grandparent(bob, $A), female($A).");
+
+    query_roundtrip_test("add(s(s(s(s(z)))), s(s(z)), $A).");
+}
+#[test]
+fn test_query_parsing_uppercase_different() {
+    query_roundtrip_test("grandparent(bob, $A).");
+    query_roundtrip_test("grandparent(bob, $B), female($B).");
+
+    query_roundtrip_test("add(s(s(s(s(z)))), s(s(z)), $C).");
 }
 
 #[cfg(test)]

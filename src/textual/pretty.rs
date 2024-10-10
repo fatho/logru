@@ -33,7 +33,17 @@ impl<'a> Prettifier<'a> {
 
     pub fn pretty<W: std::fmt::Write>(&self, writer: &mut W, term: &Term) -> std::fmt::Result {
         match term {
-            Term::Var(v) => write!(writer, "${}", self.universe.variable_name(v.ord()).unwrap_or("?")),
+            Term::Var(v) => {
+                match self.universe.variable_name(v.ord()) {
+                    None => write!(writer, "$?"),
+                    Some(name) => if name.parse::<usize>().is_ok() {
+                        // Disambiguate old numerical variables with the guard character
+                        write!(writer, "${}", name)
+                    } else {
+                        write!(writer, "{}", name)
+                    },
+                }
+            },
             Term::App(app) => self.pretty_app(writer, app),
         }
     }

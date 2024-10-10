@@ -20,7 +20,8 @@ pub enum Token {
     #[regex("[a-z][a-zA-Z_0-9]*")]
     Symbol,
 
-    #[regex(r"\$[A-Z0-9][a-zA-Z_0-9]*", lex_variable)]
+    #[regex(r"[A-Z][a-zA-Z_0-9]*", |lex| lex.slice().parse().ok())]
+    #[regex(r"(\$[0-9]+)", lex_variable)]
     Variable(String),
 
     // We can also use this variant to define whitespace,

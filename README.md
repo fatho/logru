@@ -160,7 +160,7 @@ For an example of the textual API, see e.g. [`examples/zebra.rs`](examples/zebra
 variant of the famous [Zebra puzzle](https://en.wikipedia.org/wiki/Zebra_Puzzle).
 
 The syntax is very similar to Prolog, with the main difference that there are no wildcards (every
-variable must be explicitly named) and variables are still named numerically.
+variable must be explicitly named).
 
 ### Performance
 
@@ -209,7 +209,6 @@ are:
 - A profiling mode that counts some interesting facts and figures about the solver (e.g. number of
   steps taken, number of instantiated rules, peak memory usage).
 - Making things even faster by e.g. optimising the occurs check.
-- Named variables in the textual API.
 - Auto-completion in the REPL.
 - Impure predicates (i.e. those having an implementation in Rust and can manipulate the solver state
   directly).

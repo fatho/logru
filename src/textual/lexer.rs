@@ -20,8 +20,9 @@ pub enum Token {
     #[regex("[a-z][a-zA-Z_0-9]*")]
     Symbol,
 
-    #[regex(r"\$[0-9]+", lex_variable)]
-    Variable(usize),
+    #[regex(r"[A-Z][a-zA-Z_0-9]*", |lex| lex.slice().parse().ok())]
+    #[regex(r"(\$[0-9]+)", lex_variable)]
+    Variable(String),
 
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
@@ -29,7 +30,7 @@ pub enum Token {
     Whitespace,
 }
 
-fn lex_variable(lex: &mut Lexer<Token>) -> Option<usize> {
+fn lex_variable(lex: &mut Lexer<Token>) -> Option<String> {
     let slice = lex.slice();
     let n = slice[1..].parse().ok()?; // skip '$'
     Some(n)

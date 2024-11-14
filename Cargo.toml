@@ -12,11 +12,11 @@ license = "MIT OR Apache-2.0"
 include = ["README.md", "testfiles/*", "**/*.rs", "Cargo.toml"]
 
 [dependencies]
-logos = "0.14.0"
+logos = "0.14.2"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
-ctrlc = "3.4.4"
+ctrlc = "3.4.5"
 dirs = "5.0.1"
 rustyline = "14.0.0"
 tracing = "0.1.40"

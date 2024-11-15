@@ -18,7 +18,7 @@ logos = "0.14.2"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 ctrlc = "3.4.5"
 dirs = "5.0.1"
-rustyline = "14.0.0"
+rustyline = "15.0.0"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 

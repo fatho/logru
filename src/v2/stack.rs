@@ -13,7 +13,7 @@ impl Stack {
     pub fn new() -> Self {
         Self {
             // Always occupy address `0` so that we can use the null pointer as "unassigned".
-            stack: vec![Word::from(DecodedWord::Ptr(None))],
+            stack: vec![Word::null_ptr()],
         }
     }
 
@@ -22,6 +22,15 @@ impl Stack {
     pub fn alloc(&mut self, value: Word) -> Addr {
         let addr = self.top();
         self.stack.push(value);
+        addr
+    }
+
+    /// Allocate a range of words of the given length on the stack
+    #[inline(always)]
+    pub fn alloc_range(&mut self, len: usize) -> Addr {
+        let addr = self.top();
+        self.stack
+            .extend(std::iter::repeat_n(Word::null_ptr(), len));
         addr
     }
 
@@ -110,6 +119,13 @@ impl Addr {
     pub fn offset(self, off: u32) -> Self {
         Self(self.0.checked_add(off).expect("no overflow"))
     }
+
+    /// Given a compound term at the current address with the given arity,
+    /// provide an iterator over all its arguments.
+    #[inline(always)]
+    pub fn arg_iter(self, arity: Arity) -> impl DoubleEndedIterator<Item = Addr> {
+        (0..arity.into_raw()).map(move |off| self.offset(1 + off as u32))
+    }
 }
 
 /// An atom identifier.
@@ -169,7 +185,7 @@ impl TryFrom<usize> for Arity {
     }
 }
 
-/// Decoded representation of [`Word`]s stored on the search stack.
+/// A word stored on the solver stack
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DecodedWord {
     /// A redirection to another slot.

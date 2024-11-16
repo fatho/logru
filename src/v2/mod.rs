@@ -1,3 +1,4 @@
+pub mod ast;
 pub mod lexer;
 pub mod rules;
 pub mod solver;

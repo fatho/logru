@@ -1,10 +1,11 @@
 use super::stack::{Addr, DecodedWord, Stack, Word};
+use super::universe::builtin_atoms;
 
 pub struct Solver {
     /// Currently visited search state
     state: SearchState,
     /// Alternatives we have yet to try
-    alternatives: Vec<()>,
+    alternatives: Vec<Addr>,
     /// Checkpoints used for backtracking the search
     past_checkpoints: Vec<SolveCheckpoint>,
     current_checkpoint: SolveCheckpoint,
@@ -20,6 +21,9 @@ impl Solver {
         self.state.unresolved_goals.is_empty()
     }
 
+    /// Advance to the next state.
+    ///
+    /// Returns whether more states can be explored after that.
     pub fn next_state(&mut self) -> bool {
         if let Some((goal, checkpoint)) = self.state.pop_goal() {
             // Make new checkpoint current:
@@ -37,18 +41,31 @@ impl Solver {
                 // non-variable or a unbound variable
                 DecodedWord::Ptr(_) => panic!("variable goals not supported"),
                 DecodedWord::App(atom, arity) => {
-                    // TODO: look up rule definitions by `atom/arity` and append them to
-                    // `alternatives`
-
-                    // TODO: ensure that rules are stored in the same stack we work on
-                    self.alternatives.push(()); // PLACEHOLDER
+                    match atom {
+                        // Expand conjunction terms into individual goals
+                        builtin_atoms::CONJ => {
+                            // The next `arity` terms on the stack become goals
+                            self.state
+                                .unresolved_goals
+                                .extend(goal.arg_iter(arity).rev());
+                            return true;
+                        }
+                        _ => {
+                            todo!("look up as rule");
+                            // TODO: look up rule definitions by `atom/arity` and append them to
+                            // `alternatives`
+                            if self.resume(Resume::First) {
+                                return true;
+                            }
+                        }
+                    }
                 }
             }
-        }
-
-        // Try next alternative of top-most goal
-        if self.resume() {
-            return true;
+        } else {
+            // If there are no more goals, try next alternative of top-most goal
+            if self.resume(Resume::Retry) {
+                return true;
+            }
         }
 
         // If nothing matches, backtrack, until we can
@@ -59,7 +76,7 @@ impl Solver {
             assert_eq!(self.alternatives.len(), old_current.alternative_len);
             self.state.backtrack(old_current.state_checkpoint);
 
-            if self.resume() {
+            if self.resume(Resume::Retry) {
                 return true;
             }
         }
@@ -68,8 +85,15 @@ impl Solver {
         false
     }
 
-    fn resume(&mut self) -> bool {
+    fn resume(&mut self, mut mode: Resume) -> bool {
         while self.alternatives.len() > self.current_checkpoint.alternative_len {
+            match mode {
+                Resume::First => mode = Resume::Retry,
+                Resume::Retry => {
+                    // Reset state for all but the first iterations
+                    self.state.retry(&self.current_checkpoint.state_checkpoint);
+                }
+            }
             let alt = self.alternatives.pop().expect("existence asserted above");
             // TODO: instantiate rule head
             // TODO: unify rule head
@@ -78,6 +102,15 @@ impl Solver {
         // No more alternatives left
         false
     }
+}
+
+/// From what state we are resuming a checkpoint.
+#[derive(Debug, Clone, Copy)]
+enum Resume {
+    /// The checkpoint is resumed for the first time
+    First,
+    /// The checkpoint is resumed as a retry
+    Retry,
 }
 
 struct SearchState {

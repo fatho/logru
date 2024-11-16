@@ -1,8 +1,9 @@
 //! The universe holds the current knowledge in the form of facts and rules.
 
 use std::collections::HashMap;
+use std::marker::PhantomData;
 
-use super::stack::{Addr, Arity, Atom, Stack};
+use super::stack::{Addr, Arity, Atom, DecodedWord, Stack, Word};
 
 pub struct Universe {
     store: Stack,
@@ -23,15 +24,20 @@ pub mod builtin_atoms {
     use crate::v2::stack::Atom;
 
     /// Rule compound: holds pointers to the head and tail of the stored rule
-    pub const RULE: Atom = Atom::new(1);
+    pub const FACT: Atom = Atom::new(0xFFFF_FFF0);
+    /// Fact compound: holds one pointer to the fact
+    pub const RULE: Atom = Atom::new(0xFFFF_FFF1);
     /// Conjunction compound: proving this requires proving all arguments
-    pub const CONJ: Atom = Atom::new(2);
+    pub const CONJ: Atom = Atom::new(0xFFFF_FFF2);
 }
 
-// pub struct Rule {
-//     head: Addr,
-//     tail: Addr,
-// }
+pub struct Rule {
+    /// Address of the rule compound, which also must be the starting address of all rule data in
+    /// memory.
+    head: Addr,
+    /// Address one past the last rule word.
+    end: Addr,
+}
 
 // impl Rule {
 //     pub const ATOM: Atom = builtin_atoms::RULE;

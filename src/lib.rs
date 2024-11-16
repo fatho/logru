@@ -142,6 +142,7 @@ pub mod solver;
 pub mod term_arena;
 pub mod textual;
 pub mod universe;
+pub mod v2;
 
 pub use solver::query_dfs;
 pub use universe::Universe;

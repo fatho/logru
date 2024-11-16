@@ -13,6 +13,7 @@ include = ["README.md", "testfiles/*", "**/*.rs", "Cargo.toml"]
 
 [dependencies]
 logos = "0.14.2"
+thiserror = "2.0.3"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

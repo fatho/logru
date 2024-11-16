@@ -198,13 +198,14 @@ impl<'u> SearchState<'u> {
     }
 
     fn deref_follow(&mut self, addr: Addr) -> (Addr, DerefTerm) {
+        let mut prev = addr;
         let mut cur = addr;
         loop {
             match DecodedWord::from(self.stack[cur]) {
                 DecodedWord::Ptr(Some(next)) => {
-                    // TODO: compress chains of variables, but not like that, we may only inline
-                    // zero-arity values
-                    // self.stack[cur] = self.stack[next];
+                    // TODO: is there a better way for path compression?
+                    self.stack[prev] = self.stack[cur];
+                    prev = cur;
                     cur = next;
                 }
                 DecodedWord::Ptr(None) => return (cur, DerefTerm::Free),

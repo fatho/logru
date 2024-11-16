@@ -1,9 +1,11 @@
 use std::convert::{TryFrom, TryInto};
+use std::fmt::Debug;
 use std::num::NonZero;
 use std::ops::{Index, IndexMut};
 
 use thiserror::Error;
 
+#[derive(Debug, Clone)]
 pub struct Stack {
     stack: Vec<Word>,
 }
@@ -27,11 +29,23 @@ impl Stack {
 
     /// Allocate a range of words of the given length on the stack
     #[inline(always)]
-    pub fn alloc_range(&mut self, len: usize) -> Addr {
-        let addr = self.top();
+    pub fn alloc_zeroed_range(&mut self, len: usize) -> Addr {
+        self.alloc_range(std::iter::repeat_n(Word::null_ptr(), len))
+    }
+
+    #[inline(always)]
+    pub fn alloc_range(&mut self, values: impl IntoIterator<Item = Word>) -> Addr {
+        let ret = self.top();
+        self.stack.extend(values);
+        ret
+    }
+
+    #[inline(always)]
+    pub fn copy_range(&mut self, start: Addr, end: Addr) -> Addr {
+        let ret = self.top();
         self.stack
-            .extend(std::iter::repeat_n(Word::null_ptr(), len));
-        addr
+            .extend_from_within(start.into_raw() as usize..end.into_raw() as usize);
+        ret
     }
 
     //pub fn alloc_compound(&mut self, head: Word)
@@ -59,6 +73,13 @@ impl Stack {
         // - `addr` cannot overflow due to assertion
         unsafe { Addr(NonZero::new_unchecked(addr as u32)) }
     }
+
+    pub fn freeze(&mut self) -> FrozenStack<'_> {
+        FrozenStack {
+            limit: self.top(),
+            inner: self,
+        }
+    }
 }
 
 impl Index<Addr> for Stack {
@@ -80,6 +101,79 @@ impl IndexMut<Addr> for Stack {
 impl Default for Stack {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// A stack that can only be modified above a certain limit.
+pub struct FrozenStack<'s> {
+    inner: &'s mut Stack,
+    limit: Addr,
+}
+
+impl<'s> FrozenStack<'s> {
+    /// Allocate a new singular value on the stack
+    #[inline(always)]
+    pub fn alloc(&mut self, value: Word) -> Addr {
+        self.inner.alloc(value)
+    }
+
+    /// Allocate a range of words of the given length on the stack
+    #[inline(always)]
+    pub fn alloc_zeroed_range(&mut self, len: usize) -> Addr {
+        self.inner.alloc_zeroed_range(len)
+    }
+
+    #[inline(always)]
+    pub fn alloc_range(&mut self, values: impl IntoIterator<Item = Word>) -> Addr {
+        self.inner.alloc_range(values)
+    }
+
+    #[inline(always)]
+    pub fn copy_range(&mut self, start: Addr, end: Addr) -> Addr {
+        self.inner.copy_range(start, end)
+    }
+
+    /// Free all allocations at and above the given address.
+    ///
+    /// This has no effect if `Addr` is greater than or equal to the current length.
+    #[inline(always)]
+    pub fn free(&mut self, limit: Addr) {
+        assert!(limit >= self.limit);
+        self.inner.free(limit);
+    }
+
+    /// Address of the top of the stack (one after the topmost allocated slot, or the next address
+    /// to be allocated, in other words).
+    #[inline(always)]
+    pub fn top(&self) -> Addr {
+        self.inner.top()
+    }
+
+    pub fn debug_decoded<'a>(&'a self) -> DecodedFrozenStack<'a, 's> {
+        DecodedFrozenStack(self)
+    }
+}
+
+impl<'s> Drop for FrozenStack<'s> {
+    fn drop(&mut self) {
+        self.inner.free(self.limit);
+    }
+}
+
+impl<'s> Index<Addr> for FrozenStack<'s> {
+    type Output = Word;
+
+    #[inline(always)]
+    fn index(&self, index: Addr) -> &Self::Output {
+        &self.inner[index]
+    }
+}
+
+impl<'s> IndexMut<Addr> for FrozenStack<'s> {
+    #[inline(always)]
+    fn index_mut(&mut self, index: Addr) -> &mut Self::Output {
+        assert!(index >= self.limit);
+        &mut self.inner[index]
     }
 }
 
@@ -125,6 +219,13 @@ impl Addr {
     #[inline(always)]
     pub fn arg_iter(self, arity: Arity) -> impl DoubleEndedIterator<Item = Addr> {
         (0..arity.into_raw()).map(move |off| self.offset(1 + off as u32))
+    }
+
+    /// Iterate the range from the current address to the (exclusive) top address.
+    #[inline(always)]
+    pub fn range_iter(self, top: Addr) -> impl DoubleEndedIterator<Item = Addr> {
+        // SAFETY: `self` is valid, and all addresses will be larger, hence they'll also be valid
+        (self.into_raw()..top.into_raw()).map(|addr| unsafe { Addr(NonZero::new_unchecked(addr)) })
     }
 }
 
@@ -238,6 +339,31 @@ impl From<DecodedWord> for Word {
             }
         };
         Word(encoded)
+    }
+}
+
+pub struct DecodedFrozenStack<'a, 's>(&'a FrozenStack<'s>);
+
+impl<'a, 's> Debug for DecodedFrozenStack<'a, 's> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Stack {{")?;
+        let width = self.0.inner.stack.len().ilog10() + 1;
+        for (i, val) in self.0.inner.stack.iter().enumerate() {
+            write!(f, " {i:>w$}: ", w = width as usize)?;
+            match DecodedWord::from(*val) {
+                DecodedWord::Ptr(addr) => {
+                    if let Some(addr) = addr {
+                        writeln!(f, "@{}", addr.into_raw())?;
+                    } else {
+                        writeln!(f, "@null")?;
+                    }
+                }
+                DecodedWord::App(atom, arity) => {
+                    writeln!(f, "{}/{}", atom.into_raw(), arity.into_raw())?;
+                }
+            }
+        }
+        writeln!(f, "}}")
     }
 }
 

@@ -136,6 +136,9 @@ mod tests {
     fn real_arithmetic() {
         let mut universe = TextualUniverse::new();
         let mut arith = ArithmeticBuiltin::new(universe.inner_mut());
+        // The built-in `is` evaluation predicate can be used to define a bidirectional `plus`
+        // predicate where `plus($0, $1, $2)` holds iff `$0 + $1 == $2`.
+        // At least two of the involved variables must be bound, otherwise the predicate fails.
         universe
             .load_str(
                 r"
@@ -154,10 +157,11 @@ plus($0, $1, $2) :- is($0, sub($2, $1)).
             &[vec![Some(ast::Term::Int(5)), Some(ast::Term::Int(20))]]
         );
 
+        // A chain of `plus` in all variations used for computing a final value
         let query = universe
             .query_dfs_with_builtins(
                 &mut arith,
-                "plus(1, 5, $0), plus($0, $1, 10), plus($2, $0, $1).",
+                "plus(1, 5, $0), plus($0, $1, 10), plus($2, $0, $1), is(-2, $2).",
             )
             .unwrap();
         let solutions: Vec<_> = query.collect();
@@ -169,5 +173,12 @@ plus($0, $1, $2) :- is($0, sub($2, $1)).
                 Some(ast::Term::Int(-2))
             ]]
         );
+
+        // `is` fails for invalid equations
+        let query = universe
+            .query_dfs_with_builtins(&mut arith, "plus(1, 5, $0), plus($0, $1, 10), is(10, $1).")
+            .unwrap();
+        let solutions: Vec<_> = query.collect();
+        assert_eq!(solutions, Vec::<Vec<_>>::new());
     }
 }

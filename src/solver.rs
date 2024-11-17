@@ -7,7 +7,7 @@
 mod test;
 
 use crate::{
-    ast::{self, Query, Sym, Var},
+    ast::{self, Query, Var},
     term_arena::{self, TermArena},
     universe::{CompiledRule, CompiledRuleDb, Universe},
 };
@@ -53,25 +53,38 @@ pub struct SolutionIter<'s> {
     /// Goals that still need to be solved
     unresolved_goals: Vec<term_arena::TermId>,
     /// Checkpoints created for past decisions, used for backtracking
-    checkpoints: Vec<Checkpoint>,
+    checkpoints: Vec<Checkpoint<'s>>,
     /// Current (partial) solution
     solution: SolutionState,
 }
 
 /// A solver checkpoint that can be used for backtracking to an earlier choice point.
-struct Checkpoint {
+struct Checkpoint<'s> {
     /// The goal for which we needed to make the choice.
     goal: term_arena::TermId,
     /// The symbol of the rule we're matching with.
-    rule_head: Sym,
-    /// The alternative we need to try next.
-    alternative: usize,
+    choice: ChoicePoint<'s>,
     /// The number of unresolved goals at the time of the choice. Used for popping goals from the
     /// stack that were added by a matching rule.
     goals_checkpoint: usize,
     /// Checkpoint of the partial solution to undo any assignments that have been made since this
     /// choice point.
     solution_checkpoint: SolutionCheckpoint,
+}
+
+/// Representation of the choices we have at a given checkpoint.
+enum ChoicePoint<'s> {
+    /// Exactly one choice, proceeding
+    True,
+    /// No choice, failing
+    False,
+    /// Zero or more rule heads to match against
+    Rule(RuleChoice<'s>),
+}
+
+/// Represents a choice between multiple rule definitions with a matching head.
+struct RuleChoice<'s> {
+    remaining: &'s [CompiledRule],
 }
 
 /// Status of the solution iterator after performing a step.
@@ -142,16 +155,21 @@ impl<'s> SolutionIter<'s> {
         // top-most one.
         if let Some(goal) = self.unresolved_goals.pop() {
             // resolve goal
-            let rule_head = match self.solution.terms.get_term(goal) {
-                // we currently don't support variable goals
-                term_arena::Term::Var(_) => unreachable!(),
-                term_arena::Term::App(functor, _) => functor,
+            let (goal, goal_term) = self.solution.follow_vars(goal);
+            let choice = match goal_term {
+                term_arena::Term::Var(_) => {
+                    // Free variable is vacuously true
+                    ChoicePoint::True
+                }
+                term_arena::Term::App(functor, _) => {
+                    let rules = self.rules.rules_by_head(functor);
+                    ChoicePoint::Rule(RuleChoice { remaining: rules })
+                }
             };
 
             self.checkpoints.push(Checkpoint {
                 goal,
-                rule_head,
-                alternative: 0,
+                choice,
                 solution_checkpoint: self.solution.checkpoint(),
                 goals_checkpoint: self.unresolved_goals.len(),
             });
@@ -159,7 +177,7 @@ impl<'s> SolutionIter<'s> {
         // Then we backtrack to the topmost checkpoint (which, in case we just added one above,
         // means that we likely don't actually need to backtrack at all) that still has a matching
         // alternative left to try.
-        if self.backtrack_resume() {
+        if self.resume_or_backtrack() {
             // Found a choice to commit to
             if self.unresolved_goals.is_empty() {
                 // If no goals remain, we are done
@@ -208,16 +226,24 @@ impl<'s> SolutionIter<'s> {
             .checkpoints
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
-        let rules = self.rules.rules_by_head(checkpoint.rule_head);
-        while let Some(current) = rules.get(checkpoint.alternative) {
-            checkpoint.alternative += 1;
-            let result = self.solution.unify_rule(checkpoint.goal, current);
-            if let Some(goals) = result {
-                self.unresolved_goals.extend(goals);
-                return true;
-            } else {
-                drop(result);
-                self.solution.restore(&checkpoint.solution_checkpoint);
+        match &mut checkpoint.choice {
+            ChoicePoint::True => {
+                // True has just one alternative
+                checkpoint.choice = ChoicePoint::False;
+            }
+            ChoicePoint::False => {}
+            ChoicePoint::Rule(rule_choice) => {
+                while let Some((first, rest)) = rule_choice.remaining.split_first() {
+                    rule_choice.remaining = rest;
+                    let result = self.solution.unify_rule(checkpoint.goal, first);
+                    if let Some(goals) = result {
+                        self.unresolved_goals.extend(goals);
+                        return true;
+                    } else {
+                        drop(result);
+                        self.solution.restore(&checkpoint.solution_checkpoint);
+                    }
+                }
             }
         }
         // checkpoint exhausted, put goal back and discard
@@ -227,7 +253,7 @@ impl<'s> SolutionIter<'s> {
     }
 
     /// Backtrack to the first checkpoint that allows making a choice
-    fn backtrack_resume(&mut self) -> bool {
+    fn resume_or_backtrack(&mut self) -> bool {
         while let Some(checkpoint) = self.checkpoints.last() {
             // restore to topmost checkpoint
             self.solution.restore(&checkpoint.solution_checkpoint);

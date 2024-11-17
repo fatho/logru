@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 fn main() {
     let repeats = std::env::args()
@@ -10,7 +10,8 @@ fn main() {
     u.load_str(include_str!("../testfiles/zebra.lru")).unwrap();
 
     let query = u.prepare_query("puzzle($0).").unwrap();
-    for _ in 0..repeats {
+    let mut total = Duration::ZERO;
+    for i in 0..repeats {
         let search = logru::query_dfs(u.inner(), &query);
         let before = Instant::now();
         let solutions = search.collect::<Vec<_>>();
@@ -18,17 +19,23 @@ fn main() {
 
         for solution in solutions.iter() {
             for var in solution {
-                if let Some(term) = var {
-                    println!("{}", u.pretty().term_to_string(term));
-                } else {
-                    println!("<bug: no solution>");
+                if i == 0 {
+                    if let Some(term) = var {
+                        println!("{}", u.pretty().term_to_string(term));
+                    } else {
+                        println!("<bug: no solution>");
+                    }
                 }
             }
         }
-        println!(
-            "Took {:.3}s with {} solutions",
-            duration.as_secs_f64(),
-            solutions.len()
-        );
+        total += duration;
+        if i == 0 {
+            println!(
+                "Took {:.3}s with {} solutions",
+                duration.as_secs_f64(),
+                solutions.len()
+            );
+        }
     }
+    println!("Took {:.3}s for {repeats} rounds", total.as_secs_f64(),);
 }

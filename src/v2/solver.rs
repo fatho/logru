@@ -15,6 +15,8 @@ pub fn query_dfs<'u>(
         unresolved_goals: vec![query],
         stack,
         assignments: vec![],
+        occurs_stack: vec![],
+        unify_stack: vec![],
     };
     Solver {
         state: initial_state,
@@ -48,6 +50,10 @@ impl<'u> Solver<'u> {
         self.state.unresolved_goals.is_empty()
     }
 
+    pub fn deref_addr(&self, addr: Addr) -> (Addr, DerefTerm) {
+        self.state.deref_follow(addr)
+    }
+
     /// Advance to the next state.
     ///
     /// Returns whether more states can be explored after that.
@@ -58,7 +64,7 @@ impl<'u> Solver<'u> {
                 state_checkpoint: checkpoint,
             });
 
-            let (goal_addr, goal_term) = self.state.deref_follow(goal);
+            let (goal_addr, goal_term) = self.state.deref_compress(goal);
 
             trace!("trying goal: {goal:?} => {goal_term:?}@{goal_addr:?}");
 
@@ -175,6 +181,10 @@ struct SearchState<'u> {
     stack: FrozenStack<'u>,
     /// Variables assigned so far (used for undoing assignments)
     assignments: Vec<Addr>,
+    /// Reused allocation for performing occurs check
+    occurs_stack: Vec<Addr>,
+    /// Reused allocation for performing unification
+    unify_stack: Vec<(Addr, Addr)>,
 }
 
 #[derive(Debug)]
@@ -197,7 +207,7 @@ impl<'u> SearchState<'u> {
         Some((goal, checkpoint))
     }
 
-    fn deref_follow(&mut self, addr: Addr) -> (Addr, DerefTerm) {
+    fn deref_compress(&mut self, addr: Addr) -> (Addr, DerefTerm) {
         let mut prev = addr;
         let mut cur = addr;
         loop {
@@ -206,6 +216,19 @@ impl<'u> SearchState<'u> {
                     // TODO: is there a better way for path compression?
                     self.stack[prev] = self.stack[cur];
                     prev = cur;
+                    cur = next;
+                }
+                DecodedWord::Ptr(None) => return (cur, DerefTerm::Free),
+                DecodedWord::App(atom, arity) => return (cur, DerefTerm::App(atom, arity)),
+            }
+        }
+    }
+
+    fn deref_follow(&self, addr: Addr) -> (Addr, DerefTerm) {
+        let mut cur = addr;
+        loop {
+            match DecodedWord::from(self.stack[cur]) {
+                DecodedWord::Ptr(Some(next)) => {
                     cur = next;
                 }
                 DecodedWord::Ptr(None) => return (cur, DerefTerm::Free),
@@ -231,37 +254,49 @@ impl<'u> SearchState<'u> {
     }
 
     fn unify(&mut self, left: Addr, right: Addr) -> bool {
-        let (left_addr, left_term) = self.deref_follow(left);
-        let (right_addr, right_term) = self.deref_follow(right);
+        self.unify_stack.push((left, right));
 
-        trace!("unifying {left:?}=>{left_term:?}@{left_addr:?} with {right:?}=>{right_term:?}@{right_addr:?}");
+        while let Some((left, right)) = self.unify_stack.pop() {
+            let (left_addr, left_term) = self.deref_compress(left);
+            let (right_addr, right_term) = self.deref_compress(right);
 
-        match (left_term, right_term) {
-            (DerefTerm::Free, DerefTerm::Free) => match left_addr.cmp(&right_addr) {
-                // Point from higher to lower variable
-                std::cmp::Ordering::Less => self.set_var(right_addr, left_addr),
-                std::cmp::Ordering::Greater => self.set_var(left_addr, right_addr),
-                std::cmp::Ordering::Equal => {
-                    // Same variable, nothing to do
-                    true
+            trace!("unifying {left:?}=>{left_term:?}@{left_addr:?} with {right:?}=>{right_term:?}@{right_addr:?}");
+
+            let ok = match (left_term, right_term) {
+                (DerefTerm::Free, DerefTerm::Free) => match left_addr.cmp(&right_addr) {
+                    // Point from higher to lower variable
+                    std::cmp::Ordering::Less => self.set_var(right_addr, left_addr),
+                    std::cmp::Ordering::Greater => self.set_var(left_addr, right_addr),
+                    std::cmp::Ordering::Equal => {
+                        // Same variable, nothing to do
+                        true
+                    }
+                },
+                // Set free variable to term
+                (DerefTerm::Free, DerefTerm::App(_, _)) => self.set_var(left_addr, right_addr),
+                (DerefTerm::App(_, _), DerefTerm::Free) => self.set_var(right_addr, left_addr),
+                // Compare heads and args
+                (DerefTerm::App(lat, lar), DerefTerm::App(rat, rar)) => {
+                    if lat == rat && lar == rar {
+                        // check arguments
+                        self.unify_stack.extend(
+                            left_addr
+                                .arg_iter(lar)
+                                .rev()
+                                .zip(right_addr.arg_iter(rar).rev()),
+                        );
+                        true
+                    } else {
+                        false
+                    }
                 }
-            },
-            // Set free variable to term
-            (DerefTerm::Free, DerefTerm::App(_, _)) => self.set_var(left_addr, right_addr),
-            (DerefTerm::App(_, _), DerefTerm::Free) => self.set_var(right_addr, left_addr),
-            // Compare heads and args
-            (DerefTerm::App(lat, lar), DerefTerm::App(rat, rar)) => {
-                if lat == rat && lar == rar {
-                    // check arguments
-                    left_addr
-                        .arg_iter(lar)
-                        .zip(right_addr.arg_iter(rar))
-                        .all(|(left_arg, right_arg)| self.unify(left_arg, right_arg))
-                } else {
-                    false
-                }
+            };
+            if !ok {
+                self.unify_stack.clear();
+                return false;
             }
         }
+        true
     }
 
     /// Assign a value to a variable and record this operation in the undo log. A variable may only
@@ -283,15 +318,15 @@ impl<'u> SearchState<'u> {
     /// Check whether the variable represented by address `var` is referenced from within the term
     /// rooted at address `term`.
     fn occurs(&mut self, var: Addr, term: Addr) -> bool {
-        // TODO: keep allocation around for next time
-        let mut todo = vec![term];
-        while let Some(term) = todo.pop() {
+        self.occurs_stack.push(term);
+        while let Some(term) = self.occurs_stack.pop() {
             if term == var {
+                self.occurs_stack.clear();
                 return true;
             }
             match DecodedWord::from(self.stack[term]) {
-                DecodedWord::Ptr(addr) => todo.extend(addr),
-                DecodedWord::App(_, arity) => todo.extend(term.arg_iter(arity)),
+                DecodedWord::Ptr(addr) => self.occurs_stack.extend(addr),
+                DecodedWord::App(_, arity) => self.occurs_stack.extend(term.arg_iter(arity)),
             }
         }
         false
@@ -353,7 +388,7 @@ impl<'u> SearchState<'u> {
 
 /// The result of dereferencing an [`Addr`] to a term.
 #[derive(Debug, Clone, Copy)]
-enum DerefTerm {
+pub enum DerefTerm {
     Free,
     App(Atom, Arity),
 }

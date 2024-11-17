@@ -23,6 +23,9 @@ pub enum Token {
     #[regex(r"[A-Z][a-zA-Z_0-9]*")]
     Variable,
 
+    #[token("_")]
+    AnonVariable,
+
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
     #[regex(r"[ \t\n\f]+", logos::skip)]

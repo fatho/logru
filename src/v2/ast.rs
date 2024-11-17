@@ -6,9 +6,24 @@ pub struct Rule {
     pub tail: Vec<Term>,
 }
 
+pub struct Query {
+    pub goals: Vec<Term>,
+}
+
+impl Query {
+    pub fn new(goals: Vec<Term>) -> Self {
+        Self { goals }
+    }
+}
+
 pub enum Term {
-    Var(Arc<str>),
+    Var(Var),
     Compound(CompoundTerm),
+}
+
+pub enum Var {
+    Unnamed,
+    Named(Arc<str>),
 }
 
 impl Term {
@@ -24,7 +39,11 @@ impl Term {
     }
 
     pub fn var(name: impl Into<Arc<str>>) -> Self {
-        Term::Var(name.into())
+        Term::Var(Var::Named(name.into()))
+    }
+
+    pub fn var_anon() -> Self {
+        Term::Var(Var::Unnamed)
     }
 }
 
@@ -59,6 +78,18 @@ impl Display for Rule {
     }
 }
 
+impl Display for Query {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some((first, rest)) = self.goals.split_first() {
+            write!(f, "{}", first)?;
+            for r in rest {
+                write!(f, ", {}", r)?;
+            }
+        }
+        write!(f, ".")
+    }
+}
+
 impl Display for CompoundTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.head)?;
@@ -79,6 +110,15 @@ impl Display for Term {
         match self {
             Term::Var(var) => write!(f, "{var}"),
             Term::Compound(compound_term) => write!(f, "{compound_term}"),
+        }
+    }
+}
+
+impl Display for Var {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Var::Unnamed => write!(f, "_"),
+            Var::Named(name) => write!(f, "{name}"),
         }
     }
 }

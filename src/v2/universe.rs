@@ -177,18 +177,18 @@ pub struct Checkpoint {
     free_atom: Atom,
 }
 
+/// Hold constants for built-in atoms that are available in every universe.
 pub mod builtin_atoms {
     use crate::v2::stack::Atom;
 
     /// Lowest reserved Atom, atoms above this may not be used by user definitions.
-    pub const RESERVED_LIMIT: Atom = FACT;
+    pub const RESERVED_LIMIT: Atom = CONJ;
 
-    /// Rule compound: holds pointers to the head and tail of the stored rule
-    pub const FACT: Atom = Atom::new(0xFFFF_FFF0);
-    /// Fact compound: holds one pointer to the fact
-    pub const RULE: Atom = Atom::new(0xFFFF_FFF1);
-    /// Conjunction compound: proving this requires proving all arguments
-    pub const CONJ: Atom = Atom::new(0xFFFF_FFF2);
+    /// This atom designates a conjunction compound term of arbitrary arity.
+    ///
+    /// A conjunction term is proven by proving all of its argument terms.
+    /// The empty conjunction is vacuously true.
+    pub const CONJ: Atom = Atom::new(0xFFFF_FFFF);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,17 +196,21 @@ pub struct Rule {
     /// Address of the rule compound, which also must be the starting address of all rule data in
     /// memory.
     pub head: Addr,
+    /// Start of the rule tail within the rule allocation.
     pub tail: Option<Addr>,
     /// Address one past the last rule word.
     pub end: Addr,
 }
 
 impl Rule {
+    /// The end of the head allocation in this rule. It is either the start of the tail, if there is
+    /// one, or the end of the entire allocation.
     pub fn head_end(&self) -> Addr {
         self.tail.unwrap_or(self.end)
     }
 }
 
+/// Type identifying the head of a rule, represented by the corresponding atom and arity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RuleHead(pub Atom, pub Arity);
 

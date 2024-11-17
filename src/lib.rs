@@ -1,11 +1,13 @@
 //! # Logic programming in Rust
 //!
-//! Logru is an embeddable and fast solver for a subset of Prolog. At the core of the solver is the
-//! [Universe] type which holds all known facts and rules.
+//! Logru is an embeddable and fast solver for a subset of Prolog. At the core lies the solver in
+//! the form of [`query_dfs`] which performs a depth-first search to prove the goals in a query. It
+//! does so by consulting the known facts and rules stored in a [CompiledRuleDb].
 //!
-//! The [Universe] type represents all identifiers using IDs, there is no textual representation.
-//! For a more Prolog-like syntax, and an example on how to use the [Universe] type to build
-//! higher-level abstractions, have a look at the [textual] module.
+//! Internally, all identifiers are represented using IDs. These are managed via [`SymbolStore`],
+//! which optionally provides a mapping between IDs and friendly names. There is no textual
+//! representation. For a more Prolog-like syntax, and an example on how to use the low-level
+//! components to build higher-level abstractions, have a look at the [textual] module.
 //!
 //! # Example
 //!
@@ -29,38 +31,39 @@
 //! while the second case expresses that `P + s(Q) = s(R)` where `P + Q = R` (i.e. we add one on
 //! both sides).
 //!
-//! Using the [Universe] type, we can encode these rules as follows:
+//! Using the [SymbolStore] and [CompiledRuleDb] types, we can encode these rules as follows:
 //!
 //! ```
 //! use logru::ast::{self, Rule};
 //!
-//! let mut u = logru::Universe::new();
+//! let mut syms = logru::SymbolStore::new();
+//! let mut r = logru::CompiledRuleDb::new();
 //!
 //! // Obtain IDs for t he symbols we want to use in our terms.
 //! // The order of these calls doesn't matter.
-//! let s = u.alloc_symbol();
-//! let z = u.alloc_symbol();
+//! let s = syms.get_or_insert_named("s");
+//! let z = syms.get_or_insert_named("z");
 //!
-//! let is_natural = u.alloc_symbol();
-//! let add = u.alloc_symbol();
+//! let is_natural = syms.get_or_insert_named("is_natural");
+//! let add = syms.get_or_insert_named("add");
 //!
 //! // is_natural(z).
-//! u.add_rule(Rule::fact(is_natural, vec![z.into()]));
+//! r.insert(Rule::fact(is_natural, vec![z.into()]));
 //!
 //! // is_natural(s(P)) :- is_natural(P).
-//! u.add_rule(ast::forall(|[p]| {
+//! r.insert(ast::forall(|[p]| {
 //!     Rule::fact(is_natural, vec![ast::app(s, vec![p.into()])])
 //!     .when(is_natural, vec![p.into()])
 //! }));
 //!
 //! // add(P, z, P) :- is_natural(P).
-//! u.add_rule(ast::forall(|[p]| {
+//! r.insert(ast::forall(|[p]| {
 //!     Rule::fact(add, vec![p.into(), z.into(), p.into()])
 //!     .when(is_natural, vec![p.into()])
 //! }));
 //!
 //! // add(P, s(Q), s(R)) :- add(P, Q, R).
-//! u.add_rule(ast::forall(|[p, q, r]| {
+//! r.insert(ast::forall(|[p, q, r]| {
 //!     Rule::fact(
 //!         add,
 //!         vec![
@@ -79,22 +82,23 @@
 //!
 //! ```
 //! # use logru::ast::{self, Rule};
-//! # let mut u = logru::Universe::new();
-//! # let s = u.alloc_symbol();
-//! # let z = u.alloc_symbol();
-//! # let is_natural = u.alloc_symbol();
-//! # let add = u.alloc_symbol();
+//! # let mut syms = logru::SymbolStore::new();
+//! # let mut r = logru::CompiledRuleDb::new();
+//! # let s = syms.get_or_insert_named("s");
+//! # let z = syms.get_or_insert_named("z");
+//! # let is_natural = syms.get_or_insert_named("is_natural");
+//! # let add = syms.get_or_insert_named("add");
 //! #
-//! # u.add_rule(Rule::fact(is_natural, vec![z.into()]));
-//! # u.add_rule(ast::forall(|[p]| {
+//! # r.insert(Rule::fact(is_natural, vec![z.into()]));
+//! # r.insert(ast::forall(|[p]| {
 //! #     Rule::fact(is_natural, vec![ast::app(s, vec![p.into()])])
 //! #     .when(is_natural, vec![p.into()])
 //! # }));
-//! # u.add_rule(ast::forall(|[p]| {
+//! # r.insert(ast::forall(|[p]| {
 //! #     Rule::fact(add, vec![p.into(), z.into(), p.into()])
 //! #     .when(is_natural, vec![p.into()])
 //! # }));
-//! # u.add_rule(ast::forall(|[p, q, r]| {
+//! # r.insert(ast::forall(|[p, q, r]| {
 //! #     Rule::fact(
 //! #         add,
 //! #         vec![
@@ -106,7 +110,7 @@
 //! #     .when(add, vec![p.into(), q.into(), r.into()])
 //! # }));
 //! let query = ast::exists(|[x]| {
-//!     ast::Query::new(
+//!     ast::Query::single(
 //!         add,
 //!         vec![
 //!             x.into(),
@@ -116,7 +120,7 @@
 //!     )
 //! });
 //! // Obtain an iterator that allows us to exhaustively search the solution space:
-//! let solutions = logru::query_dfs(&u, &query);
+//! let solutions = logru::query_dfs(&r, &query);
 //! // Sanity check that there is only one solution, and it is the expected one
 //! assert_eq!(
 //!     solutions.collect::<Vec<_>>(),
@@ -144,4 +148,4 @@ pub mod textual;
 pub mod universe;
 
 pub use solver::query_dfs;
-pub use universe::Universe;
+pub use universe::{CompiledRuleDb, SymbolStore};

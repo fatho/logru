@@ -1,5 +1,5 @@
 use super::*;
-use crate::{ast::*, universe::Universe};
+use crate::{ast::*, SymbolStore};
 
 #[test]
 fn genealogy() {
@@ -18,35 +18,36 @@ fn genealogy() {
 
     */
 
-    let mut u = Universe::new();
+    let mut s = SymbolStore::new();
+    let mut r = CompiledRuleDb::new();
 
-    let alice = u.alloc_symbol();
-    let bob = u.alloc_symbol();
-    let carol = u.alloc_symbol();
-    let dave = u.alloc_symbol();
-    let eve = u.alloc_symbol();
-    let faithe = u.alloc_symbol();
+    let alice = s.get_or_insert_named("alice");
+    let bob = s.get_or_insert_named("bob");
+    let carol = s.get_or_insert_named("carol");
+    let dave = s.get_or_insert_named("dave");
+    let eve = s.get_or_insert_named("eve");
+    let faithe = s.get_or_insert_named("faithe");
 
-    let parent = u.alloc_symbol();
-    let grandparent = u.alloc_symbol();
-    let siblings = u.alloc_symbol();
+    let parent = s.get_or_insert_named("parent");
+    let grandparent = s.get_or_insert_named("grandparent");
+    let siblings = s.get_or_insert_named("siblings");
 
-    u.add_rule(Rule::fact(parent, vec![alice.into(), carol.into()]));
-    u.add_rule(Rule::fact(parent, vec![bob.into(), carol.into()]));
+    r.insert(Rule::fact(parent, vec![alice.into(), carol.into()]));
+    r.insert(Rule::fact(parent, vec![bob.into(), carol.into()]));
 
-    u.add_rule(Rule::fact(parent, vec![carol.into(), eve.into()]));
-    u.add_rule(Rule::fact(parent, vec![dave.into(), eve.into()]));
+    r.insert(Rule::fact(parent, vec![carol.into(), eve.into()]));
+    r.insert(Rule::fact(parent, vec![dave.into(), eve.into()]));
 
-    u.add_rule(Rule::fact(parent, vec![carol.into(), faithe.into()]));
-    u.add_rule(Rule::fact(parent, vec![dave.into(), faithe.into()]));
+    r.insert(Rule::fact(parent, vec![carol.into(), faithe.into()]));
+    r.insert(Rule::fact(parent, vec![dave.into(), faithe.into()]));
 
-    u.add_rule(forall(|[p, q, r]| {
+    r.insert(forall(|[p, q, r]| {
         Rule::fact(grandparent, vec![p.into(), r.into()])
             .when(parent, vec![p.into(), q.into()])
             .when(parent, vec![q.into(), r.into()])
     }));
 
-    u.add_rule(forall(|[p, c1, c2]| {
+    r.insert(forall(|[p, c1, c2]| {
         Rule::fact(siblings, vec![c1.into(), c2.into()])
             .when(parent, vec![p.into(), c1.into()])
             .when(parent, vec![p.into(), c2.into()])
@@ -54,8 +55,8 @@ fn genealogy() {
 
     // query all known grandparents of eve
     let solutions = query_dfs(
-        &u,
-        &exists(|[x]| Query::new(grandparent, vec![x.into(), eve.into()])),
+        &r,
+        &exists(|[x]| Query::single(grandparent, vec![x.into(), eve.into()])),
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
@@ -64,8 +65,8 @@ fn genealogy() {
 
     // query all grandchildren of bob
     let solutions = query_dfs(
-        &u,
-        &exists(|[x]| Query::new(grandparent, vec![bob.into(), x.into()])),
+        &r,
+        &exists(|[x]| Query::single(grandparent, vec![bob.into(), x.into()])),
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
@@ -74,8 +75,8 @@ fn genealogy() {
 
     // query all siblings of eve
     let solutions = query_dfs(
-        &u,
-        &exists(|[x]| Query::new(siblings, vec![eve.into(), x.into()])),
+        &r,
+        &exists(|[x]| Query::single(siblings, vec![eve.into(), x.into()])),
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
@@ -104,26 +105,27 @@ fn arithmetic() {
 
     */
 
-    let mut u = Universe::new();
+    let mut u = SymbolStore::new();
+    let mut r = CompiledRuleDb::new();
 
-    let s = u.alloc_symbol();
-    let z = u.alloc_symbol();
+    let s = u.get_or_insert_named("s");
+    let z = u.get_or_insert_named("z");
 
-    let is_natural = u.alloc_symbol();
-    let is_zero = u.alloc_symbol();
-    let add = u.alloc_symbol();
+    let is_natural = u.get_or_insert_named("is_natural");
+    let is_zero = u.get_or_insert_named("is_zero");
+    let add = u.get_or_insert_named("add");
 
-    u.add_rule(Rule::fact(is_zero, vec![z.into()]));
-    u.add_rule(Rule::fact(is_natural, vec![z.into()]));
+    r.insert(Rule::fact(is_zero, vec![z.into()]));
+    r.insert(Rule::fact(is_natural, vec![z.into()]));
 
-    u.add_rule(forall(|[x]| {
+    r.insert(forall(|[x]| {
         Rule::fact(is_natural, vec![ast::app(s, vec![x.into()])]).when(is_natural, vec![x.into()])
     }));
 
-    u.add_rule(forall(|[x]| {
+    r.insert(forall(|[x]| {
         Rule::fact(add, vec![x.into(), z.into(), x.into()]).when(is_natural, vec![x.into()])
     }));
-    u.add_rule(forall(|[x, y, z]| {
+    r.insert(forall(|[x, y, z]| {
         Rule::fact(
             add,
             vec![
@@ -136,11 +138,11 @@ fn arithmetic() {
     }));
 
     // query all zero numbers
-    let solutions = query_dfs(&u, &exists(|[x]| Query::new(is_zero, vec![x.into()])));
+    let solutions = query_dfs(&r, &exists(|[x]| Query::single(is_zero, vec![x.into()])));
     assert_eq!(solutions.collect::<Vec<_>>(), vec![vec![Some(z.into())],]);
 
     // query the first natural numbers
-    let solutions = query_dfs(&u, &exists(|[x]| Query::new(is_natural, vec![x.into()])));
+    let solutions = query_dfs(&r, &exists(|[x]| Query::single(is_natural, vec![x.into()])));
     assert_eq!(
         solutions.take(3).collect::<Vec<_>>(),
         vec![
@@ -152,9 +154,9 @@ fn arithmetic() {
 
     // compute 2 + 1
     let solutions = query_dfs(
-        &u,
+        &r,
         &exists(|[x]| {
-            Query::new(
+            Query::single(
                 add,
                 vec![
                     ast::app(s, vec![ast::app(s, vec![z.into()])]),
@@ -174,9 +176,9 @@ fn arithmetic() {
 
     // compute 3 - 2
     let solutions = query_dfs(
-        &u,
+        &r,
         &exists(|[x]| {
-            Query::new(
+            Query::single(
                 add,
                 vec![
                     x.into(),

@@ -1,96 +1,110 @@
 //! # Universe
 //!
-//! The universe is the data store that holds all the facts and rules that the solver will use for
-//! proving queries. See the [Universe] type for more information.
+//! The universe consists of two main "databases" that are relevant to the set of facts, rules and
+//! queries:
+//! 1. The [`SymbolStore`] is used for allocating named and unnamed [`Sym`]bols which are used as
+//!    identifiers in the low-level representation.
+
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     ast::*,
     term_arena::{self, TermArena},
 };
 
-/// The Universe is a collection of symbols, facts and rules.
+/// The symbol store is responsible for allocating unique [`Sym`]s (unique within the instance,
+/// there are no guardrails preventing mixing [`Sym`]s from different [`SymbolStore`]s), and keeps a
+/// mapping between [`Sym`]s and friendly names.
 ///
-/// A solver, like the built-in [query_dfs](crate::query_dfs) can be used for running queries
-/// against the universe.
+/// # Example
+///
+/// ```
+/// # use logru::universe::*;
+/// let mut store = SymbolStore::new();
+/// let foo = store.get_or_insert_named("foo");
+/// let bar = store.get_or_insert_named("bar");
+/// assert_ne!(foo, bar);
+///
+/// let foo_again = store.get_or_insert_named("foo");
+/// assert_eq!(foo, foo_again);
+///
+/// let bar_name = store.get_symbol_name(bar);
+/// assert_eq!(bar_name, Some("bar"));
+///
+/// // Creating an unnamed symbol
+/// let unknown = store.insert_unnamed();
+/// let unknown_name = store.get_symbol_name(unknown);
+/// assert_eq!(unknown_name, None);
+/// ```
 ///
 /// # Example
 ///
 /// See the [top-level example](crate#example).
 #[derive(Debug)]
-pub struct Universe {
-    /// next unallocated symbol ID
-    fresh_symbol: usize,
-    rules: Vec<Rule>,
-    compiled_rules: CompiledRuleDb,
+pub struct SymbolStore {
+    /// Mapping from names to symbols
+    sym_by_name: HashMap<Arc<str>, Sym>,
+    /// Mapping from symbols to names. The length of this mapping doubles as the next unallocated
+    /// symbol ID.
+    name_by_sym: Vec<Option<Arc<str>>>,
 }
 
-impl Universe {
-    /// Create a new empty universe.
+impl SymbolStore {
+    /// Create a new empty symbol store.
     pub fn new() -> Self {
         Self {
-            fresh_symbol: 0,
-            rules: vec![],
-            compiled_rules: CompiledRuleDb::new(),
+            sym_by_name: HashMap::new(),
+            name_by_sym: Vec::new(),
         }
     }
 
-    /// Generate a fresh symbol ID in this universe.
+    /// Return the symbol associated with the name, or allocate a fresh ID and associate it with the
+    /// given name.
+    pub fn get_or_insert_named(&mut self, name: &str) -> Sym {
+        self.sym_by_name.get(name).copied().unwrap_or_else(|| {
+            let sym = Sym::from_ord(self.name_by_sym.len());
+            let shared_name: Arc<str> = name.into();
+            self.name_by_sym.push(Some(shared_name.clone()));
+            self.sym_by_name.insert(shared_name, sym);
+            sym
+        })
+    }
+
+    /// Generate a fresh unnamed symbol ID in this universe.
     ///
     /// # Notes
     ///
     /// While it is possible to create symbols directly from ordinals using [`Sym::from_ord`], using
     /// those may cause the solver to panic or return invalid results if the ordinal hasn't been
     /// previously obtained by calling [`Sym::ord`] on a symbol allocated in this universe.
-    pub fn alloc_symbol(&mut self) -> Sym {
-        let sym = Sym::from_ord(self.fresh_symbol);
-        self.fresh_symbol += 1;
+    pub fn insert_unnamed(&mut self) -> Sym {
+        let sym = Sym::from_ord(self.name_by_sym.len());
+        self.name_by_sym.push(None);
         sym
     }
 
-    /// Generate a range of fresh symbol IDs in this universe.
-    ///
-    /// See [Universe::alloc_symbol] for general notes about symbol allocation.
-    pub fn alloc_symbols(&mut self, count: usize) -> impl Iterator<Item = Sym> {
-        let fresh_start = self.fresh_symbol;
-        self.fresh_symbol += count;
-        (fresh_start..fresh_start + count).map(Sym::from_ord)
-    }
-
-    /// Add a new rule to this universe for deriving facts.
-    pub fn add_rule(&mut self, rule: Rule) {
-        self.compiled_rules.insert(&rule);
-        self.rules.push(rule);
-    }
-
-    /// Returns the rules that have been added to this universe.
-    pub fn rules(&self) -> &[Rule] {
-        &self.rules
+    /// Get the name of a symbol, if it has one.
+    pub fn get_symbol_name(&self, sym: Sym) -> Option<&str> {
+        self.name_by_sym.get(sym.ord()).and_then(|n| n.as_deref())
     }
 
     /// Returns the number of symbols that have been allocated in this universe.
     pub fn num_symbols(&self) -> usize {
-        self.fresh_symbol
-    }
-
-    /// Returns the set of compiled rules that are more efficient for a solver to process.
-    ///
-    /// This function is only needed for writing your own solvers that need access to the more
-    /// efficient lookup representation maintained internally by the universe.
-    pub fn compiled_rules(&self) -> &CompiledRuleDb {
-        &self.compiled_rules
+        self.name_by_sym.len()
     }
 }
 
-impl Default for Universe {
+impl Default for SymbolStore {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Auxilliary data structure exposed for use in custom solvers.
+/// Data structure holding facts and rules for use in solvers, like the built-in
+/// [query_dfs](crate::query_dfs).
 ///
-/// In contrast to the pointer-heavy layout of the regular [Rule](crate::ast::Rule) AST, this type
-/// contains preallocated [crate::term_arena::TermArena]s that are faster to instantiate.
+/// In contrast to the pointer-heavy layout of the regular [Rule] AST, this type contains
+/// preallocated [crate::term_arena::TermArena]s that are faster to instantiate.
 #[derive(Debug, Clone)]
 pub struct CompiledRule {
     /// Arena containing the head terms.
@@ -105,10 +119,12 @@ pub struct CompiledRule {
     /// Precomputed number of required variable slots for fast allocation of temporary goal
     /// variables when a rule is instantiated.
     var_slots: usize,
+    /// The original rule that was compiled into this
+    original: Rule,
 }
 
 impl CompiledRule {
-    pub fn new(rule: &Rule) -> CompiledRule {
+    pub fn new(rule: Rule) -> CompiledRule {
         let mut scratch = Vec::new();
         let mut head_blueprint = TermArena::new();
         let mut tail_blueprint = TermArena::new();
@@ -130,6 +146,7 @@ impl CompiledRule {
                     .max()
                     .unwrap_or(0),
             ),
+            original: rule,
         }
     }
 
@@ -149,6 +166,11 @@ impl CompiledRule {
     #[inline(always)]
     pub fn var_slots(&self) -> usize {
         self.var_slots
+    }
+
+    /// Return the original rule that was compiled into this.
+    pub fn original(&self) -> &Rule {
+        &self.original
     }
 }
 
@@ -175,10 +197,11 @@ impl CompiledRuleDb {
     }
 
     /// Compile a rule and insert it into the database.
-    pub fn insert(&mut self, rule: &Rule) {
-        self.ensure_capacity(rule.head.functor);
+    pub fn insert(&mut self, rule: Rule) {
+        let head = rule.head.functor;
+        self.ensure_capacity(head);
         let compiled = CompiledRule::new(rule);
-        self.rules_by_head[rule.head.functor.ord()].push(compiled);
+        self.rules_by_head[head.ord()].push(compiled);
     }
 
     /// Query all the rules that have a matching head.

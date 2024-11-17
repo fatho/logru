@@ -1,4 +1,4 @@
-use logos::{Lexer, Logos};
+use logos::Logos;
 
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
@@ -20,17 +20,15 @@ pub enum Token {
     #[regex("[a-z][a-zA-Z_0-9]*")]
     Symbol,
 
-    #[regex(r"\$[0-9]+", lex_variable)]
-    Variable(usize),
+    #[regex("[A-Z][a-zA-Z_0-9]*")]
+    Variable,
+
+    /// NOTE: each wild-card will be a different variable, even when the name is the same.
+    #[regex("_[a-zA-Z_0-9]*")]
+    Wildcard,
 
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
     #[regex(r"[ \t\n\f]+", logos::skip)]
     Whitespace,
-}
-
-fn lex_variable(lex: &mut Lexer<Token>) -> Option<usize> {
-    let slice = lex.slice();
-    let n = slice[1..].parse().ok()?; // skip '$'
-    Some(n)
 }

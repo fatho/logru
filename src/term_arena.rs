@@ -1,7 +1,7 @@
 //! # Arena allocation for terms
 //!
 //! This module provides an alternative representation for logic terms that is more efficient to
-//! work with in the solver than the one from the [`ast`](crate::ast) module.
+//! work with in the solver than the one from the [`ast`] module.
 //!
 //! It's not used for the "external" interface because while being more efficient in certain cases,
 //! the interface is also more cumbersome to use. As a trade-off, conversion happens at interface

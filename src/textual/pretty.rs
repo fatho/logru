@@ -1,15 +1,15 @@
-use crate::ast::{AppTerm, Query, Rule, Term};
+use crate::ast::{AppTerm, Query, Rule, Term, VarScope};
 
-use super::NamedUniverse;
+use super::SymbolStore;
 
 /// A pretty-printer for terms using the Prolog-like syntax of the
 /// [TextualUniverse](super::TextualUniverse).
 pub struct Prettifier<'u> {
-    universe: &'u NamedUniverse,
+    universe: &'u SymbolStore,
 }
 
 impl<'a> Prettifier<'a> {
-    pub fn new(universe: &'a NamedUniverse) -> Self {
+    pub fn new(universe: &'a SymbolStore) -> Self {
         Self { universe }
     }
 
@@ -25,16 +25,27 @@ impl<'a> Prettifier<'a> {
         out
     }
 
-    pub fn term_to_string(&self, term: &Term) -> String {
+    pub fn term_to_string(&self, term: &Term, scope: Option<&VarScope>) -> String {
         let mut out = String::new();
-        self.pretty(&mut out, term).unwrap();
+        self.pretty(&mut out, term, scope).unwrap();
         out
     }
 
-    pub fn pretty<W: std::fmt::Write>(&self, writer: &mut W, term: &Term) -> std::fmt::Result {
+    pub fn pretty<W: std::fmt::Write>(
+        &self,
+        writer: &mut W,
+        term: &Term,
+        scope: Option<&VarScope>,
+    ) -> std::fmt::Result {
         match term {
-            Term::Var(v) => write!(writer, "${}", v.ord()),
-            Term::App(app) => self.pretty_app(writer, app),
+            Term::Var(v) => {
+                if let Some(name) = scope.and_then(|scope| scope.get_name(*v)) {
+                    write!(writer, "{name}")
+                } else {
+                    write!(writer, "_{}", v.ord())
+                }
+            }
+            Term::App(app) => self.pretty_app(writer, app, scope),
         }
     }
 
@@ -42,8 +53,9 @@ impl<'a> Prettifier<'a> {
         &self,
         writer: &mut W,
         term: &AppTerm,
+        scope: Option<&VarScope>,
     ) -> std::fmt::Result {
-        if let Some(name) = &self.universe.symbol_name(term.functor) {
+        if let Some(name) = &self.universe.get_symbol_name(term.functor) {
             write!(writer, "{}", name)?;
         } else {
             write!(writer, "<unk:{}>", term.functor.ord())?;
@@ -52,10 +64,10 @@ impl<'a> Prettifier<'a> {
         if let Some((first, rest)) = term.args.split_first() {
             write!(writer, "(")?;
 
-            self.pretty(writer, first)?;
+            self.pretty(writer, first, scope)?;
             for arg in rest {
                 write!(writer, ", ")?;
-                self.pretty(writer, arg)?;
+                self.pretty(writer, arg, scope)?;
             }
 
             write!(writer, ")")?;
@@ -69,19 +81,20 @@ impl<'a> Prettifier<'a> {
         writer: &mut W,
         query: &Query,
     ) -> std::fmt::Result {
-        self.pretty_conjunction(writer, &query.goals)
+        self.pretty_conjunction(writer, &query.goals, query.scope.as_ref())
     }
 
     pub fn pretty_conjunction<W: std::fmt::Write>(
         &self,
         writer: &mut W,
         goals: &[AppTerm],
+        scope: Option<&VarScope>,
     ) -> std::fmt::Result {
         if let Some((first, rest)) = goals.split_first() {
-            self.pretty_app(writer, first)?;
+            self.pretty_app(writer, first, scope)?;
             for arg in rest {
                 write!(writer, ", ")?;
-                self.pretty_app(writer, arg)?;
+                self.pretty_app(writer, arg, scope)?;
             }
         }
         write!(writer, ".")?;
@@ -90,12 +103,12 @@ impl<'a> Prettifier<'a> {
     }
 
     pub fn pretty_rule<W: std::fmt::Write>(&self, writer: &mut W, rule: &Rule) -> std::fmt::Result {
-        self.pretty_app(writer, &rule.head)?;
+        self.pretty_app(writer, &rule.head, rule.scope.as_ref())?;
         if rule.tail.is_empty() {
             write!(writer, ".")?;
         } else {
             write!(writer, " :- ")?;
-            self.pretty_conjunction(writer, &rule.tail)?;
+            self.pretty_conjunction(writer, &rule.tail, rule.scope.as_ref())?;
         }
         Ok(())
     }

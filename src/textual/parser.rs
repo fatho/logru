@@ -2,9 +2,10 @@ use std::iter::Peekable;
 
 use logos::{Logos, Span, SpannedIter};
 
-use crate::ast::{AppTerm, Query, Rule, Sym, Term, Var};
+use crate::ast::{AppTerm, Query, Rule, Sym, Term, Var, VarScope};
+use crate::universe::SymbolStore;
 
-use super::{lexer::Token, NamedUniverse};
+use super::lexer::Token;
 
 struct TokenStream<'a> {
     source: &'a str,
@@ -78,23 +79,22 @@ pub enum ParseErrorKind {
 /// A parser for terms using the Prolog-like syntax of the
 /// [TextualUniverse](super::TextualUniverse).
 pub struct Parser<'u> {
-    universe: &'u mut NamedUniverse,
+    symbols: &'u mut SymbolStore,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(universe: &'a mut NamedUniverse) -> Self {
-        Self { universe }
+    pub fn new(symbols: &'a mut SymbolStore) -> Self {
+        Self { symbols }
     }
 
     // //////////////////////////////// PUBLIC PARSER ////////////////////////////////
 
     pub fn parse_query_str(&mut self, query: &str) -> Result<Query, ParseError> {
         let mut tokens = TokenStream::new(query);
-        let result = self
-            .parse_conjunction1(&mut tokens)
-            .map(Query::with_goals)?;
+        let mut scope = VarScope::new();
+        let goals = self.parse_conjunction1(&mut tokens, &mut scope)?;
         self.expect_eof(&mut tokens)?;
-        Ok(result)
+        Ok(Query::new(goals, Some(scope)))
     }
 
     pub fn parse_rule_str(&mut self, rule: &str) -> Result<Rule, ParseError> {
@@ -116,11 +116,12 @@ impl<'a> Parser<'a> {
     // //////////////////////////////// PARSER INTERNALS ////////////////////////////////
 
     fn parse_rule(&mut self, tokens: &mut TokenStream) -> Result<Rule, ParseError> {
-        let head = self.parse_appterm(tokens)?;
+        let mut scope = VarScope::new();
+        let head = self.parse_appterm(tokens, &mut scope)?;
         let tail = match tokens.peek_token() {
             Some(Ok(Token::ImpliedBy)) => {
                 tokens.advance();
-                self.parse_conjunction1(tokens)?
+                self.parse_conjunction1(tokens, &mut scope)?
             }
             Some(Ok(Token::Period)) => {
                 tokens.advance();
@@ -132,16 +133,24 @@ impl<'a> Parser<'a> {
             }
             None => return Err(ParseError::new(tokens.eof(), ParseErrorKind::UnexpectedEof)),
         };
-        Ok(Rule { head, tail })
+        Ok(Rule {
+            head,
+            tail,
+            scope: Some(scope),
+        })
     }
 
-    fn parse_conjunction1(&mut self, tokens: &mut TokenStream) -> Result<Vec<AppTerm>, ParseError> {
-        let mut goals = vec![self.parse_appterm(tokens)?];
+    fn parse_conjunction1(
+        &mut self,
+        tokens: &mut TokenStream,
+        scope: &mut VarScope,
+    ) -> Result<Vec<AppTerm>, ParseError> {
+        let mut goals = vec![self.parse_appterm(tokens, scope)?];
         loop {
             match tokens.peek_token() {
                 Some(Ok(Token::Comma)) => {
                     tokens.advance();
-                    goals.push(self.parse_appterm(tokens)?);
+                    goals.push(self.parse_appterm(tokens, scope)?);
                 }
                 Some(Ok(Token::Period)) => {
                     tokens.advance();
@@ -181,13 +190,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_appterm(&mut self, tokens: &mut TokenStream) -> Result<AppTerm, ParseError> {
+    fn parse_appterm(
+        &mut self,
+        tokens: &mut TokenStream,
+        scope: &mut VarScope,
+    ) -> Result<AppTerm, ParseError> {
         let functor = self.parse_symbol(tokens)?;
         let mut args = vec![];
         if let Some(Ok(Token::LParen)) = tokens.peek_token() {
             tokens.advance();
             loop {
-                args.push(self.parse_term(tokens)?);
+                args.push(self.parse_term(tokens, scope)?);
                 match tokens.peek_token() {
                     Some(Ok(Token::Comma)) => {
                         tokens.advance();
@@ -209,26 +222,41 @@ impl<'a> Parser<'a> {
         Ok(AppTerm::new(functor, args))
     }
 
-    fn parse_term(&mut self, tokens: &mut TokenStream) -> Result<Term, ParseError> {
+    fn parse_term(
+        &mut self,
+        tokens: &mut TokenStream,
+        scope: &mut VarScope,
+    ) -> Result<Term, ParseError> {
         match tokens.peek_token() {
-            Some(Ok(Token::Variable(index))) => {
+            Some(Ok(Token::Variable)) => self.parse_variable(tokens, scope).map(Term::Var),
+            Some(Ok(Token::Wildcard)) => {
                 tokens.advance();
-                Ok(Term::Var(Var::from_ord(index)))
+                Ok(Term::Var(scope.insert_wildcard()))
             }
-            _ => self.parse_appterm(tokens).map(Term::App),
+            _ => self.parse_appterm(tokens, scope).map(Term::App),
         }
     }
 
     fn parse_symbol(&mut self, tokens: &mut TokenStream) -> Result<Sym, ParseError> {
         let span = self.expect_token(tokens, Token::Symbol)?;
-        let sym = self.universe.symbol(tokens.slice(span));
+        let sym = self.symbols.get_or_insert_named(tokens.slice(span));
         Ok(sym)
+    }
+
+    fn parse_variable(
+        &mut self,
+        tokens: &mut TokenStream,
+        scope: &mut VarScope,
+    ) -> Result<Var, ParseError> {
+        let span = self.expect_token(tokens, Token::Variable)?;
+        let var = scope.get_or_insert(tokens.slice(span));
+        Ok(var)
     }
 }
 
 #[cfg(test)]
 fn query_roundtrip_test(input: &str) {
-    let mut nu = NamedUniverse::new();
+    let mut nu = SymbolStore::new();
     let mut p = Parser::new(&mut nu);
 
     let q = p.parse_query_str(input).unwrap();
@@ -240,15 +268,15 @@ fn query_roundtrip_test(input: &str) {
 
 #[test]
 fn test_query_parsing() {
-    query_roundtrip_test("grandparent(bob, $0).");
-    query_roundtrip_test("grandparent(bob, $0), female($0).");
+    query_roundtrip_test("grandparent(bob, X).");
+    query_roundtrip_test("grandparent(bob, X), female(X).");
 
-    query_roundtrip_test("add(s(s(s(s(z)))), s(s(z)), $0).");
+    query_roundtrip_test("add(s(s(s(s(z)))), s(s(z)), X).");
 }
 
 #[cfg(test)]
 fn rule_roundtrip_test(input: &str) {
-    let mut nu = NamedUniverse::new();
+    let mut nu = SymbolStore::new();
     let mut p = Parser::new(&mut nu);
     let q = p.parse_rule_str(input).unwrap();
 
@@ -260,6 +288,6 @@ fn rule_roundtrip_test(input: &str) {
 #[test]
 fn test_rule_parsing() {
     rule_roundtrip_test("is_natural(z).");
-    rule_roundtrip_test("is_natural(s($0)) :- is_natural($0).");
-    rule_roundtrip_test("grandparent($0, $1) :- parent($0, $2), parent($2, $0).");
+    rule_roundtrip_test("is_natural(s(X)) :- is_natural(X).");
+    rule_roundtrip_test("grandparent(X, Y) :- parent(X, Z), parent(Z, Y).");
 }

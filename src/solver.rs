@@ -1,6 +1,7 @@
 //! # A DFS solver for queries
 //!
-//! This module contains the bits and pieces necessary for proving queries in a [crate::Universe].
+//! This module contains the bits and pieces necessary for proving queries using the facts and rules
+//! stores in a [crate::CompiledRuleDb].
 //! For now, Logru only supports a single solving strategy, [query_dfs].
 
 #[cfg(test)]
@@ -9,7 +10,7 @@ mod test;
 use crate::{
     ast::{self, Query, Sym, Var},
     term_arena::{self, TermArena},
-    universe::{CompiledRule, CompiledRuleDb, Universe},
+    universe::{CompiledRule, CompiledRuleDb},
 };
 
 /// Solve queries against the universe using a depth-first-search.
@@ -19,7 +20,7 @@ use crate::{
 /// rules are left-recursive.
 ///
 /// For a usage example, see the [top-level example](crate#example).
-pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> {
+pub fn query_dfs<'a>(rules: &'a CompiledRuleDb, query: &Query) -> SolutionIter<'a> {
     // determine how many goal variables we need to allocate
     let max_var = query.count_var_slots();
 
@@ -29,7 +30,7 @@ pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> 
 
     // initialize solver
     SolutionIter {
-        rules: universe.compiled_rules(),
+        rules,
         unresolved_goals: query
             .goals
             .iter()
@@ -102,19 +103,20 @@ impl<'s> SolutionIter<'s> {
     /// ```
     /// # use logru::ast::{self, Rule};
     /// # use logru::solver::Step;
-    /// # let mut u = logru::Universe::new();
-    /// # let s = u.alloc_symbol();
-    /// # let z = u.alloc_symbol();
-    /// # let is_natural = u.alloc_symbol();
-    /// # let add = u.alloc_symbol();
+    /// # let mut syms = logru::SymbolStore::new();
+    /// # let mut r = logru::CompiledRuleDb::new();
+    /// # let s = syms.get_or_insert_named("s");
+    /// # let z = syms.get_or_insert_named("z");
+    /// # let is_natural = syms.get_or_insert_named("is_natural");
+    /// # let add = syms.get_or_insert_named("add");
     /// #
-    /// # u.add_rule(Rule::fact(is_natural, vec![z.into()]));
-    /// # u.add_rule(ast::forall(|[p]| {
+    /// # r.insert(Rule::fact(is_natural, vec![z.into()]));
+    /// # r.insert(ast::forall(|[p]| {
     /// #     Rule::fact(is_natural, vec![ast::app(s, vec![p.into()])])
     /// #     .when(is_natural, vec![p.into()])
     /// # }));
     /// # let query = ast::exists(|[x]| {
-    /// #     ast::Query::new(
+    /// #     ast::Query::single(
     /// #         add,
     /// #         vec![
     /// #             x.into(),
@@ -128,7 +130,7 @@ impl<'s> SolutionIter<'s> {
     /// let interrupted = Arc::new(AtomicBool::new(false));
     /// // Pass `interrupted` off to somewhere else where it can be set when the search is cancelled
     /// # interrupted.store(true, atomic::Ordering::SeqCst);
-    /// let mut solutions = logru::query_dfs(&u, &query);
+    /// let mut solutions = logru::query_dfs(&r, &query);
     /// while ! interrupted.load(atomic::Ordering::SeqCst) {
     ///     match solutions.step() {
     ///         Step::Yield => println!("{:?}", solutions.get_solution()),

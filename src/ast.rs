@@ -180,6 +180,8 @@ pub struct Rule {
     /// The terms that need to hold for the `head` to become true. If the tail is empty, then the
     /// head is always true. The rule is then called a fact.
     pub tail: Vec<AppTerm>,
+    /// Names of the variables used in this rule
+    pub scope: Option<VarScope>,
 }
 
 impl Rule {
@@ -189,7 +191,11 @@ impl Rule {
             functor: pred,
             args,
         };
-        Self { head, tail: vec![] }
+        Self {
+            head,
+            tail: vec![],
+            scope: None,
+        }
     }
 
     /// Constrain a rule with an additional condition that must hold for the rule head to become
@@ -218,7 +224,7 @@ impl Rule {
 /// let female = Sym::from_ord(1);
 /// let bob = Sym::from_ord(2);
 /// let rule = exists(|[x]|
-///     Query::new(grandparent, vec![bob.into(), x.into()])
+///     Query::single(grandparent, vec![bob.into(), x.into()])
 ///     .and(female, vec![x.into()])
 /// );
 /// ```
@@ -226,22 +232,24 @@ impl Rule {
 pub struct Query {
     /// The conunctive goals that need to be proven as part of this query.
     pub goals: Vec<AppTerm>,
+    /// Names of the variables used in this query
+    pub scope: Option<VarScope>,
 }
 
 impl Query {
     /// The query that is vacuously true
     pub fn empty() -> Query {
-        Query::with_goals(vec![])
+        Query::new(vec![], None)
     }
 
     /// A query consisting of a set of goals.
-    pub fn with_goals(goals: Vec<AppTerm>) -> Query {
-        Query { goals }
+    pub fn new(goals: Vec<AppTerm>, scope: Option<VarScope>) -> Query {
+        Query { goals, scope }
     }
 
     /// A query with just a single goal.
-    pub fn new(pred: Sym, args: Vec<Term>) -> Query {
-        Query::with_goals(vec![AppTerm::new(pred, args)])
+    pub fn single(pred: Sym, args: Vec<Term>) -> Query {
+        Query::new(vec![AppTerm::new(pred, args)], None)
     }
 
     /// Add another goal to this query.
@@ -263,6 +271,49 @@ impl Query {
             .map(|t| t.count_var_slots())
             .max()
             .unwrap_or(0)
+    }
+}
+
+/// Mapping of variable names to indices inside a scope (e.g. a rule or a query).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VarScope {
+    names: Vec<Option<String>>,
+}
+
+impl VarScope {
+    pub fn new() -> Self {
+        Self { names: Vec::new() }
+    }
+
+    /// Get the index associated with a name, or insert a new association.
+    pub fn get_or_insert(&mut self, name: &str) -> Var {
+        self.names
+            .iter()
+            .position(|existing| existing.as_ref().map_or(false, |x| x == name))
+            .map(Var::from_ord)
+            .unwrap_or_else(|| {
+                let ord = self.names.len();
+                self.names.push(Some(name.to_string()));
+                Var::from_ord(ord)
+            })
+    }
+
+    /// Insert a new unnamed wildcard variable.
+    pub fn insert_wildcard(&mut self) -> Var {
+        let ord = self.names.len();
+        self.names.push(None);
+        Var::from_ord(ord)
+    }
+
+    /// Return the associated name of the given variable.
+    pub fn get_name(&self, var: Var) -> Option<&str> {
+        self.names.get(var.ord()).and_then(|n| n.as_deref())
+    }
+}
+
+impl Default for VarScope {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

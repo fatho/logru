@@ -34,34 +34,34 @@ Loaded!
 We can then ask it to solve 2 + 3 (and find the correct answer 5):
 
 ```
-?- add(s(s(z)), s(s(s(z))), $0).
+?- add(s(s(z)), s(s(s(z))), X).
 Found solution:
-  $0 = s(s(s(s(s(z)))))
+  X = s(s(s(s(s(z)))))
 No more solutions.
 ```
 
 It is also possible to enumerate all pairs of terms that add up to five:
 
 ```
-?- add($0, $1, s(s(s(s(s(z)))))).
+?- add(X, Y, s(s(s(s(s(z)))))).
 Found solution:
-  $0 = s(s(s(s(s(z)))))
-  $1 = z
+  X = s(s(s(s(s(z)))))
+  Y = z
 Found solution:
-  $0 = s(s(s(s(z))))
-  $1 = s(z)
+  X = s(s(s(s(z))))
+  Y = s(z)
 Found solution:
-  $0 = s(s(s(z)))
-  $1 = s(s(z))
+  X = s(s(s(z)))
+  Y = s(s(z))
 Found solution:
-  $0 = s(s(z))
-  $1 = s(s(s(z)))
+  X = s(s(z))
+  Y = s(s(s(z)))
 Found solution:
-  $0 = s(z)
-  $1 = s(s(s(s(z))))
+  X = s(z)
+  Y = s(s(s(s(z))))
 Found solution:
-  $0 = z
-  $1 = s(s(s(s(s(z)))))
+  X = z
+  Y = s(s(s(s(s(z)))))
 No more solutions.
 ```
 
@@ -73,27 +73,28 @@ those IDs.
 
 ### Core API
 
-At the core of the solver is the `logru::Universe` type which holds all known facts and rules.
-A few simple rules for [Peano arithmetic](https://en.wikipedia.org/wiki/Peano_axioms#Addition) can
-be defined like this:
+At the core of the solver are the `logru::SymbolStore` and `logru::CompiledRuleDb` types, which
+hold all known facts and rules. A few simple rules for [Peano
+arithmetic](https://en.wikipedia.org/wiki/Peano_axioms#Addition) can be defined like this:
 
 ```rust
-let mut u = logru::Universe::new();
+let mut syms = logru::SymbolStore::new();
+let mut r = logru::CompiledRuleDb::new();
 
 // Obtain IDs for t he symbols we want to use in our terms.
 // The order of these calls doesn't matter.
-let s = u.alloc_symbol();
-let z = u.alloc_symbol();
+let s = syms.get_or_insert_named("s");
+let z = syms.get_or_insert_named("z");
 
-let is_natural = u.alloc_symbol();
-let add = u.alloc_symbol();
+let is_natural = syms.get_or_insert_named("is_natural");
+let add = syms.get_or_insert_named("add");
 
 // Define the fact `is_natural(z)`, i.e. that zero is a natural number
-u.add_rule(Rule::fact(is_natural, vec![z.into()]));
+r.insert(Rule::fact(is_natural, vec![z.into()]));
 
 // Define the rule `is_natural(s(P)) :- is_natural(P)`, i.e. that
 // the successor of P is a natural number if P is also a natural number.
-u.add_rule(forall(|[p]| {
+r.insert(ast::forall(|[p]| {
     Rule::fact(is_natural, vec![ast::app(s, vec![p.into()])])
     .when(is_natural, vec![p.into()])
 }));
@@ -104,14 +105,14 @@ u.add_rule(forall(|[p]| {
 // Define the rule `add(P, z, P) :- is_natural(P)`, i.e. that
 // adding zero to P is P if P is a natural number.
 // This is the base case of Peano addition.
-u.add_rule(forall(|[p]| {
+r.insert(ast::forall(|[p]| {
     Rule::fact(add, vec![p.into(), z.into(), p.into()])
     .when(is_natural, vec![p.into()])
 }));
 
 // Finally, define the rule `add(P, s(Q), s(R)) :- add(P, Q, R)`,
 // the recursive case of Peano addition.
-u.add_rule(forall(|[p, q, r]| {
+r.insert(ast::forall(|[p, q, r]| {
     Rule::fact(
         add,
         vec![
@@ -131,9 +132,9 @@ this answer:
 ```rust
 // Obtain an iterator that allows us to exhaustively search the solution space:
 let solutions = query_dfs(
-    &u,
+    &r,
     &exists(|[x]| {
-        Query::new(
+        Query::single(
             add,
             vec![
                 x.into(),
@@ -159,8 +160,7 @@ infinite recursion.
 For an example of the textual API, see e.g. [`examples/zebra.rs`](examples/zebra.rs), solving a
 variant of the famous [Zebra puzzle](https://en.wikipedia.org/wiki/Zebra_Puzzle).
 
-The syntax is very similar to Prolog, with the main difference that there are no wildcards (every
-variable must be explicitly named) and variables are still named numerically.
+The syntax is very similar to Prolog, but it is far from complete.
 
 ### Performance
 
@@ -209,7 +209,6 @@ are:
 - A profiling mode that counts some interesting facts and figures about the solver (e.g. number of
   steps taken, number of instantiated rules, peak memory usage).
 - Making things even faster by e.g. optimising the occurs check.
-- Named variables in the textual API.
 - Auto-completion in the REPL.
 - Impure predicates (i.e. those having an implementation in Rust and can manipulate the solver state
   directly).

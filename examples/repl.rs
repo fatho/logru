@@ -3,6 +3,7 @@ use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Instant;
 
+use logru::ast::Var;
 use logru::solver::query_dfs;
 use logru::textual::TextualUniverse;
 use rustyline::completion::Completer;
@@ -134,7 +135,7 @@ fn query(state: &mut AppState, args: &str) {
     state.interrupted.store(false, atomic::Ordering::SeqCst);
     match state.universe.prepare_query(args) {
         Ok(query) => {
-            let mut solutions = query_dfs(state.universe.inner(), &query);
+            let mut solutions = query_dfs(state.universe.rules(), &query);
             loop {
                 if state.interrupted.load(atomic::Ordering::SeqCst) {
                     println!("Interrupted!");
@@ -145,9 +146,23 @@ fn query(state: &mut AppState, args: &str) {
                         let solution = solutions.get_solution();
                         println!("Found solution:");
                         for (index, var) in solution.into_iter().enumerate() {
-                            print!("  ${} = ", index);
+                            if let Some(name) = query
+                                .scope
+                                .as_ref()
+                                .and_then(|s| s.get_name(Var::from_ord(index)))
+                            {
+                                print!("  {} = ", name);
+                            } else {
+                                print!("  _{} = ", index);
+                            }
                             if let Some(term) = var {
-                                println!("{}", state.universe.pretty().term_to_string(&term));
+                                println!(
+                                    "{}",
+                                    state
+                                        .universe
+                                        .pretty()
+                                        .term_to_string(&term, query.scope.as_ref())
+                                );
                             } else {
                                 println!("<any>");
                             }

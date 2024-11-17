@@ -303,6 +303,8 @@ impl<'u> SearchState<'u> {
         // try unifying head
         if self.unify(goal, new_head) {
             if let Some(tail) = rule.tail {
+                // Instantiate tail. It is important that the new tail is allocated right after the
+                // new head.
                 let new_tail = self.instantiate(tail, rule.end);
                 UnifyRule::Rule(new_tail)
             } else {
@@ -313,6 +315,19 @@ impl<'u> SearchState<'u> {
         }
     }
 
+    /// Instantiate a rule head or tail (ranging consecutively from `start` inclusive to `end`
+    /// exclusive) by copying the range to the top of the stack, and then adding the offset between
+    /// `start` and the new address to all [`DecodedWord::Ptr`] values in the target range.
+    ///
+    /// This assumes that all pointers inside the range pointed to cells that were copied with the
+    /// same offset.
+    ///
+    /// For rules, this is the case, because:
+    /// - the rule head and tail are laid out consecutively in memory
+    /// - the rule head only points to other parts of the rule head
+    /// - the rule tail only points to the head or other parts of the tail
+    /// - the rule head is copied first
+    /// - without allocating anything else, the tail is copied upon successful unification
     fn instantiate(&mut self, start: Addr, end: Addr) -> Addr {
         // Instantiate rule head
         let new_start = self.stack.copy_range(start, end);
@@ -343,6 +358,7 @@ enum DerefTerm {
     App(Atom, Arity),
 }
 
+/// The result of unifying a goal with a rule head.
 #[derive(Debug, Clone, Copy)]
 enum UnifyRule {
     /// Unification failed

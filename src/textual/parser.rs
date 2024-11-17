@@ -215,6 +215,10 @@ impl<'a> Parser<'a> {
                 tokens.advance();
                 Ok(Term::Var(Var::from_ord(index)))
             }
+            Some(Ok(Token::Int(val))) => {
+                tokens.advance();
+                Ok(Term::Int(val))
+            }
             _ => self.parse_appterm(tokens).map(Term::App),
         }
     }
@@ -244,6 +248,8 @@ fn test_query_parsing() {
     query_roundtrip_test("grandparent(bob, $0), female($0).");
 
     query_roundtrip_test("add(s(s(s(s(z)))), s(s(z)), $0).");
+
+    query_roundtrip_test("eval($0, plus(3, 4)).");
 }
 
 #[cfg(test)]

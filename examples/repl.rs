@@ -3,7 +3,7 @@ use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Instant;
 
-use logru::solver::query_dfs;
+use logru::solver::{query_dfs, Plain};
 use logru::textual::TextualUniverse;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
@@ -134,7 +134,7 @@ fn query(state: &mut AppState, args: &str) {
     state.interrupted.store(false, atomic::Ordering::SeqCst);
     match state.universe.prepare_query(args) {
         Ok(query) => {
-            let mut solutions = query_dfs(state.universe.inner(), &query);
+            let mut solutions = query_dfs(state.universe.inner().inner(), Plain, &query);
             loop {
                 if state.interrupted.load(atomic::Ordering::SeqCst) {
                     println!("Interrupted!");

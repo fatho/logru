@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+use logru::solver::Plain;
+
 fn main() {
     let repeats = std::env::args()
         .nth(1)
@@ -11,7 +13,7 @@ fn main() {
 
     let query = u.prepare_query("puzzle($0).").unwrap();
     for _ in 0..repeats {
-        let search = logru::query_dfs(u.inner(), &query);
+        let search = logru::query_dfs(u.inner().inner(), Plain, &query);
         let before = Instant::now();
         let solutions = search.collect::<Vec<_>>();
         let duration = before.elapsed();

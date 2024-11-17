@@ -55,6 +55,7 @@ fn genealogy() {
     // query all known grandparents of eve
     let solutions = query_dfs(
         &u,
+        Plain,
         &exists(|[x]| Query::new(grandparent, vec![x.into(), eve.into()])),
     );
     assert_eq!(
@@ -65,6 +66,7 @@ fn genealogy() {
     // query all grandchildren of bob
     let solutions = query_dfs(
         &u,
+        Plain,
         &exists(|[x]| Query::new(grandparent, vec![bob.into(), x.into()])),
     );
     assert_eq!(
@@ -75,6 +77,7 @@ fn genealogy() {
     // query all siblings of eve
     let solutions = query_dfs(
         &u,
+        Plain,
         &exists(|[x]| Query::new(siblings, vec![eve.into(), x.into()])),
     );
     assert_eq!(
@@ -136,11 +139,19 @@ fn arithmetic() {
     }));
 
     // query all zero numbers
-    let solutions = query_dfs(&u, &exists(|[x]| Query::new(is_zero, vec![x.into()])));
+    let solutions = query_dfs(
+        &u,
+        Plain,
+        &exists(|[x]| Query::new(is_zero, vec![x.into()])),
+    );
     assert_eq!(solutions.collect::<Vec<_>>(), vec![vec![Some(z.into())],]);
 
     // query the first natural numbers
-    let solutions = query_dfs(&u, &exists(|[x]| Query::new(is_natural, vec![x.into()])));
+    let solutions = query_dfs(
+        &u,
+        Plain,
+        &exists(|[x]| Query::new(is_natural, vec![x.into()])),
+    );
     assert_eq!(
         solutions.take(3).collect::<Vec<_>>(),
         vec![
@@ -153,6 +164,7 @@ fn arithmetic() {
     // compute 2 + 1
     let solutions = query_dfs(
         &u,
+        Plain,
         &exists(|[x]| {
             Query::new(
                 add,
@@ -175,6 +187,7 @@ fn arithmetic() {
     // compute 3 - 2
     let solutions = query_dfs(
         &u,
+        Plain,
         &exists(|[x]| {
             Query::new(
                 add,

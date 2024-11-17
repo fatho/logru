@@ -7,7 +7,7 @@
 mod test;
 
 use crate::{
-    ast::{self, Query, Var},
+    ast::{self, Query, Sym, Var},
     term_arena::{self, TermArena},
     universe::{CompiledRule, CompiledRuleDb, Universe},
 };
@@ -19,7 +19,10 @@ use crate::{
 /// rules are left-recursive.
 ///
 /// For a usage example, see the [top-level example](crate#example).
-pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> {
+pub fn query_dfs<'a, B>(universe: &'a Universe, builtins: B, query: &Query) -> SolutionIter<'a, B>
+where
+    B: BuiltinHandler,
+{
     // determine how many goal variables we need to allocate
     let max_var = query.count_var_slots();
 
@@ -38,8 +41,61 @@ pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> 
             .collect(),
         checkpoints: vec![],
         solution,
+        builtin_state: builtins,
     }
 }
+
+pub trait BuiltinHandler {
+    type Choice;
+
+    fn lookup_predicate(&mut self, head: Sym) -> Option<Self::Choice>;
+
+    fn next_choice(
+        &mut self,
+        choice: &mut Self::Choice,
+        solution: &mut SolutionState,
+        goal: term_arena::TermId,
+    ) -> bool;
+}
+
+pub struct Plain;
+
+impl BuiltinHandler for Plain {
+    type Choice = NoChoice;
+
+    fn next_choice(
+        &mut self,
+        choice: &mut Self::Choice,
+        _: &mut SolutionState,
+        _: term_arena::TermId,
+    ) -> bool {
+        match *choice {}
+    }
+
+    fn lookup_predicate(&mut self, _: Sym) -> Option<Self::Choice> {
+        None
+    }
+}
+
+impl<B: BuiltinHandler> BuiltinHandler for &mut B {
+    type Choice = B::Choice;
+
+    fn lookup_predicate(&mut self, head: Sym) -> Option<Self::Choice> {
+        (*self).lookup_predicate(head)
+    }
+
+    fn next_choice(
+        &mut self,
+        choice: &mut Self::Choice,
+        solution: &mut SolutionState,
+        goal: term_arena::TermId,
+    ) -> bool {
+        (*self).next_choice(choice, solution, goal)
+    }
+}
+
+/// Used for the [`Plain`] builtin to indicate that it does not provide extra types of choices.
+pub enum NoChoice {}
 
 /// Iterator over all solutions for a given query.
 ///
@@ -47,23 +103,25 @@ pub fn query_dfs<'a>(universe: &'a Universe, query: &Query) -> SolutionIter<'a> 
 /// 1. Via the provided iterator implementation which returns all valid solutions to the query.
 /// 2. Using the [SolutionIter::step] method which returns after each intermediate step as well.
 ///    This can be useful for implementing cancellation.
-pub struct SolutionIter<'s> {
+pub struct SolutionIter<'s, B: BuiltinHandler> {
     /// The rule database that can be used for resolving queries.
     rules: &'s CompiledRuleDb,
     /// Goals that still need to be solved
     unresolved_goals: Vec<term_arena::TermId>,
     /// Checkpoints created for past decisions, used for backtracking
-    checkpoints: Vec<Checkpoint<'s>>,
+    checkpoints: Vec<Checkpoint<'s, B>>,
     /// Current (partial) solution
     solution: SolutionState,
+    /// State needed for evaluating builtins
+    builtin_state: B,
 }
 
 /// A solver checkpoint that can be used for backtracking to an earlier choice point.
-struct Checkpoint<'s> {
+struct Checkpoint<'s, B: BuiltinHandler> {
     /// The goal for which we needed to make the choice.
     goal: term_arena::TermId,
     /// The symbol of the rule we're matching with.
-    choice: ChoicePoint<'s>,
+    choice: ChoicePoint<'s, B>,
     /// The number of unresolved goals at the time of the choice. Used for popping goals from the
     /// stack that were added by a matching rule.
     goals_checkpoint: usize,
@@ -73,13 +131,15 @@ struct Checkpoint<'s> {
 }
 
 /// Representation of the choices we have at a given checkpoint.
-enum ChoicePoint<'s> {
+enum ChoicePoint<'s, B: BuiltinHandler> {
     /// Exactly one choice, proceeding
     True,
     /// No choice, failing
     False,
     /// Zero or more rule heads to match against
     Rule(RuleChoice<'s>),
+    /// Builtin-defined choice
+    Builtin(B::Choice),
 }
 
 /// Represents a choice between multiple rule definitions with a matching head.
@@ -100,7 +160,7 @@ pub enum Step {
     Done,
 }
 
-impl<'s> SolutionIter<'s> {
+impl<'s, B: BuiltinHandler> SolutionIter<'s, B> {
     /// Perform a single solver step.
     ///
     /// This method can be used as more fine-grained means for traversing the solution space as
@@ -114,7 +174,7 @@ impl<'s> SolutionIter<'s> {
     ///
     /// ```
     /// # use logru::ast::{self, Rule};
-    /// # use logru::solver::Step;
+    /// # use logru::solver::{Step, Plain};
     /// # let mut u = logru::Universe::new();
     /// # let s = u.alloc_symbol();
     /// # let z = u.alloc_symbol();
@@ -141,7 +201,7 @@ impl<'s> SolutionIter<'s> {
     /// let interrupted = Arc::new(AtomicBool::new(false));
     /// // Pass `interrupted` off to somewhere else where it can be set when the search is cancelled
     /// # interrupted.store(true, atomic::Ordering::SeqCst);
-    /// let mut solutions = logru::query_dfs(&u, &query);
+    /// let mut solutions = logru::query_dfs(&u, Plain, &query);
     /// while ! interrupted.load(atomic::Ordering::SeqCst) {
     ///     match solutions.step() {
     ///         Step::Yield => println!("{:?}", solutions.get_solution()),
@@ -161,9 +221,18 @@ impl<'s> SolutionIter<'s> {
                     // Free variable is vacuously true
                     ChoicePoint::True
                 }
-                term_arena::Term::App(functor, _) => {
-                    let rules = self.rules.rules_by_head(functor);
-                    ChoicePoint::Rule(RuleChoice { remaining: rules })
+                term_arena::Term::App(functor, _) => self
+                    .builtin_state
+                    .lookup_predicate(functor)
+                    .map(ChoicePoint::Builtin)
+                    .unwrap_or_else(|| {
+                        let rules = self.rules.rules_by_head(functor);
+                        ChoicePoint::Rule(RuleChoice { remaining: rules })
+                    }),
+                term_arena::Term::Int(_) => {
+                    // Integers cannot be resolved as goals
+                    // TODO: we should probably log errors like this somewhere
+                    ChoicePoint::False
                 }
             };
 
@@ -245,6 +314,17 @@ impl<'s> SolutionIter<'s> {
                     }
                 }
             }
+            ChoicePoint::Builtin(choice) => {
+                // TODO: allow builtins to produce new goals
+                if self
+                    .builtin_state
+                    .next_choice(choice, &mut self.solution, checkpoint.goal)
+                {
+                    return true;
+                } else {
+                    self.solution.restore(&checkpoint.solution_checkpoint);
+                }
+            }
         }
         // checkpoint exhausted, put goal back and discard
         let discarded = self.checkpoints.pop().expect("we know there is one here");
@@ -269,7 +349,7 @@ impl<'s> SolutionIter<'s> {
     }
 }
 
-impl<'s> Iterator for SolutionIter<'s> {
+impl<'s, B: BuiltinHandler> Iterator for SolutionIter<'s, B> {
     type Item = Vec<Option<ast::Term>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -284,7 +364,7 @@ impl<'s> Iterator for SolutionIter<'s> {
 }
 
 /// Auxilliary data structure holding a (partial) solution.
-struct SolutionState {
+pub struct SolutionState {
     /// The current map of goal variables to their values, if any.
     variables: Vec<Option<term_arena::TermId>>,
     /// A log of assignment operations. Everytime a variable is assigned, it is recorded here.
@@ -352,6 +432,7 @@ impl SolutionState {
                     self.occurs_stack
                         .extend(args.map(|arg_id| terms.get_arg(arg_id)))
                 }
+                term_arena::Term::Int(_) => {}
             }
             match self.occurs_stack.pop() {
                 // More terms to check
@@ -399,6 +480,7 @@ impl SolutionState {
                     .map(|arg_id| self.get_solution_term(self.terms.get_arg(arg_id)))
                     .collect(),
             }),
+            term_arena::Term::Int(val) => ast::Term::Int(val),
         }
     }
 
@@ -414,19 +496,30 @@ impl SolutionState {
     /// Follow the assignment of variables until reaching either an unassigned variable or an
     /// application term. Used by unification for applying substitution on-the-fly rather than
     /// needing to create a bunch of copies of terms.
-    fn follow_vars(&self, mut term: term_arena::TermId) -> (term_arena::TermId, term_arena::Term) {
+    pub fn follow_vars(
+        &self,
+        mut id: term_arena::TermId,
+    ) -> (term_arena::TermId, term_arena::Term) {
         loop {
-            match self.terms.get_term(term) {
+            match self.terms.get_term(id) {
                 term_arena::Term::Var(var) => {
                     if let Some(value) = &self.variables[var.ord()] {
-                        term = *value;
+                        id = *value;
                     } else {
-                        return (term, term_arena::Term::Var(var));
+                        return (id, term_arena::Term::Var(var));
                     }
                 }
-                app @ term_arena::Term::App(_, _) => return (term, app),
+                term => return (id, term),
             }
         }
+    }
+
+    pub fn terms(&self) -> &TermArena {
+        &self.terms
+    }
+
+    pub fn terms_mut(&mut self) -> &mut TermArena {
+        &mut self.terms
     }
 
     /// Unify the given goal (sub) term with a rule (sub) term.
@@ -436,7 +529,7 @@ impl SolutionState {
     /// When unification was succesul, `true` is returned, otherwise `false`. In case of a
     /// unification failure, the solution is in an undefined state, so a checkpoint must be used for
     /// restoring it to its pre-unification state if desired.
-    fn unify(&mut self, goal_term: term_arena::TermId, rule_term: term_arena::TermId) -> bool {
+    pub fn unify(&mut self, goal_term: term_arena::TermId, rule_term: term_arena::TermId) -> bool {
         // Step 1: transitively dereference variable terms.
         // This is important so that substitutions become visible here.
         let (goal_term_id, goal_term) = self.follow_vars(goal_term);
@@ -455,13 +548,9 @@ impl SolutionState {
                     true
                 }
             }
-            // variable with application term
-            (term_arena::Term::Var(goal_var), term_arena::Term::App(_, _)) => {
-                self.set_var(goal_var, rule_term_id)
-            }
-            (term_arena::Term::App(_, _), term_arena::Term::Var(rule_var)) => {
-                self.set_var(rule_var, goal_term_id)
-            }
+            // variable with another term
+            (term_arena::Term::Var(goal_var), _) => self.set_var(goal_var, rule_term_id),
+            (_, term_arena::Term::Var(rule_var)) => self.set_var(rule_var, goal_term_id),
             // two application terms
             (
                 term_arena::Term::App(goal_func, goal_args),
@@ -480,6 +569,11 @@ impl SolutionState {
                     self.unify(self.terms.get_arg(goal_arg), self.terms.get_arg(rule_arg))
                 })
             }
+            // two integer terms
+            (term_arena::Term::Int(i1), term_arena::Term::Int(i2)) => i1 == i2,
+            // incompatible types
+            // TODO: we should probably log a type error
+            (_, _) => false,
         }
     }
 

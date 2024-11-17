@@ -79,6 +79,7 @@
 //!
 //! ```
 //! # use logru::ast::{self, Rule};
+//! # use logru::solver::Plain;
 //! # let mut u = logru::Universe::new();
 //! # let s = u.alloc_symbol();
 //! # let z = u.alloc_symbol();
@@ -116,7 +117,7 @@
 //!     )
 //! });
 //! // Obtain an iterator that allows us to exhaustively search the solution space:
-//! let solutions = logru::query_dfs(&u, &query);
+//! let solutions = logru::query_dfs(&u, Plain, &query);
 //! // Sanity check that there is only one solution, and it is the expected one
 //! assert_eq!(
 //!     solutions.collect::<Vec<_>>(),
@@ -137,6 +138,7 @@
 //!
 //!
 
+pub mod arithmetic;
 pub mod ast;
 pub mod solver;
 pub mod term_arena;

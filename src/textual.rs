@@ -16,7 +16,7 @@ pub use parser::{ParseError, ParseErrorKind};
 
 use crate::{
     ast::{Query, Sym},
-    solver::{self, SolutionIter},
+    solver::{self, BuiltinHandler, Plain, SolutionIter},
     universe::Universe,
 };
 
@@ -137,6 +137,7 @@ impl Default for NamedUniverse {
 /// ```
 /// # use logru::textual::*;
 /// # use logru::query_dfs;
+/// # use logru::solver::Plain;
 /// let mut u = TextualUniverse::new();
 /// u.load_str(
 ///     r#"
@@ -151,7 +152,7 @@ impl Default for NamedUniverse {
 /// .unwrap();
 ///
 /// let query = u.prepare_query("mul($0,$0,$1).").unwrap();
-/// let solutions = query_dfs(u.inner(), &query);
+/// let solutions = query_dfs(u.inner().inner(), Plain, &query);
 /// for solution in solutions.take(5) {
 ///     println!("SOLUTION:");
 ///     for (index, var) in solution.into_iter().enumerate() {
@@ -198,9 +199,18 @@ impl TextualUniverse {
     /// universe because parsing can discover new symbols that need to be added to the universe
     /// before running the query. Running a query by itself only requires a shared reference, and
     /// thus the pretty-printer is still accessible.
-    pub fn query_dfs(&mut self, query: &str) -> Result<SolutionIter, ParseError> {
+    pub fn query_dfs(&mut self, query: &str) -> Result<SolutionIter<Plain>, ParseError> {
         let query = self.prepare_query(query)?;
-        Ok(solver::query_dfs(self.universe.inner(), &query))
+        Ok(solver::query_dfs(self.universe.inner(), Plain, &query))
+    }
+
+    pub fn query_dfs_with_builtins<B: BuiltinHandler>(
+        &mut self,
+        builtin: B,
+        query: &str,
+    ) -> Result<SolutionIter<B>, ParseError> {
+        let query = self.prepare_query(query)?;
+        Ok(solver::query_dfs(self.universe.inner(), builtin, &query))
     }
 
     // //////////////////////////////// OTHER ACCESSORS ////////////////////////////////
@@ -215,12 +225,12 @@ impl TextualUniverse {
         Parser::new(&mut self.universe)
     }
 
-    pub fn inner_mut(&mut self) -> &mut Universe {
-        self.universe.inner_mut()
+    pub fn inner_mut(&mut self) -> &mut NamedUniverse {
+        &mut self.universe
     }
 
-    pub fn inner(&self) -> &Universe {
-        self.universe.inner()
+    pub fn inner(&self) -> &NamedUniverse {
+        &self.universe
     }
 }
 

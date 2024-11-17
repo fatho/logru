@@ -61,7 +61,7 @@ pub struct ArgId(usize);
 /// let t_foo = arena.app(foo, &[t_bar, t_baz, t_v1]);
 /// // Sanity check
 /// match arena.get_term(t_foo) {
-///     Term::Var(_) => unreachable!(),
+///     Term::Var(_) | Term::Int(_) => unreachable!(),
 ///     Term::App(sym, args) => {
 ///         assert_eq!(sym, foo);
 ///         assert_eq!(
@@ -95,6 +95,13 @@ impl TermArena {
     pub fn var(&mut self, var: Var) -> TermId {
         let term = TermId(self.terms.len());
         self.terms.push(Term::Var(var));
+        term
+    }
+
+    /// Allocate a new int term.
+    pub fn int(&mut self, int: i64) -> TermId {
+        let term = TermId(self.terms.len());
+        self.terms.push(Term::Int(int));
         term
     }
 
@@ -170,6 +177,7 @@ impl TermArena {
                         end: args.end + here.args,
                     },
                 ),
+                Term::Int(val) => Term::Int(*val),
             }));
         self.args.extend(
             blueprint
@@ -192,6 +200,7 @@ impl TermArena {
         match term {
             ast::Term::Var(v) => self.var(*v),
             ast::Term::App(app) => self.insert_ast_appterm(scratch, app),
+            ast::Term::Int(int) => self.int(*int),
         }
     }
 
@@ -324,4 +333,6 @@ pub enum Term {
     /// An application term of the form `foo(arg1, arg2, arg3, ...)`.
     /// The argument range can be used to get the corresponding argument terms from the arena.
     App(Sym, ArgRange),
+    /// An integer value
+    Int(i64),
 }

@@ -1,3 +1,4 @@
+use logru::solver::Plain;
 use logru::{solver::query_dfs, textual::TextualUniverse};
 
 fn main() {
@@ -18,7 +19,7 @@ fn main() {
     .unwrap();
 
     let query = u.prepare_query("mul($0,$0,$1).").unwrap();
-    let solutions = query_dfs(u.inner(), &query);
+    let solutions = query_dfs(u.inner().inner(), Plain, &query);
 
     for solution in solutions.take(10) {
         println!("SOLUTION:");

@@ -35,6 +35,7 @@ impl<'a> Prettifier<'a> {
         match term {
             Term::Var(v) => write!(writer, "${}", v.ord()),
             Term::App(app) => self.pretty_app(writer, app),
+            Term::Int(val) => write!(writer, "{}", val),
         }
     }
 

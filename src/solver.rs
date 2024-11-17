@@ -48,6 +48,7 @@ pub fn query_dfs<'a>(rules: &'a CompiledRuleDb, query: &Query) -> SolutionIter<'
 /// 1. Via the provided iterator implementation which returns all valid solutions to the query.
 /// 2. Using the [SolutionIter::step] method which returns after each intermediate step as well.
 ///    This can be useful for implementing cancellation.
+#[derive(Debug)]
 pub struct SolutionIter<'s> {
     /// The rule database that can be used for resolving queries.
     rules: &'s CompiledRuleDb,
@@ -60,6 +61,7 @@ pub struct SolutionIter<'s> {
 }
 
 /// A solver checkpoint that can be used for backtracking to an earlier choice point.
+#[derive(Debug)]
 struct Checkpoint {
     /// The goal for which we needed to make the choice.
     goal: term_arena::TermId,
@@ -260,6 +262,7 @@ impl<'s> Iterator for SolutionIter<'s> {
 }
 
 /// Auxilliary data structure holding a (partial) solution.
+#[derive(Debug)]
 struct SolutionState {
     /// The current map of goal variables to their values, if any.
     variables: Vec<Option<term_arena::TermId>>,
@@ -273,6 +276,7 @@ struct SolutionState {
     occurs_stack: Vec<term_arena::TermId>,
 }
 
+#[derive(Debug)]
 struct SolutionCheckpoint {
     operations_checkpoint: usize,
     variables_checkpoint: usize,
@@ -321,6 +325,10 @@ impl SolutionState {
                         // Found the variable, we clear the stack for an early exit
                         self.occurs_stack.clear();
                         return true;
+                    } else if let Some(value) = self.variables[v.ord()] {
+                        // Follow already assigned variables
+                        term = value;
+                        continue;
                     }
                 }
                 term_arena::Term::App(_, args) => {
@@ -394,8 +402,8 @@ impl SolutionState {
         loop {
             match self.terms.get_term(term) {
                 term_arena::Term::Var(var) => {
-                    if let Some(value) = &self.variables[var.ord()] {
-                        term = *value;
+                    if let Some(value) = self.variables[var.ord()] {
+                        term = value;
                     } else {
                         return (term, term_arena::Term::Var(var));
                     }
@@ -484,6 +492,40 @@ impl SolutionState {
             Some(tail.iter().rev().map(move |tail| conv_rule_tail(*tail)))
         } else {
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::solver::SolutionIter;
+    use crate::textual::TextualUniverse;
+
+    /// https://github.com/fatho/logru/issues/15
+    #[test]
+    fn occurs_check_issue_15() {
+        let mut tu = TextualUniverse::new();
+        tu.load_str("refl(f(X), g(X)).").unwrap();
+
+        // This way around works
+        let solver = tu.query_dfs("refl(A, f(A)).").unwrap();
+        assert_no_solution(solver);
+
+        // This way doesn't
+        let solver = tu.query_dfs("refl(f(A), A).").unwrap();
+        assert_no_solution(solver);
+
+        #[track_caller]
+        fn assert_no_solution(mut solver: SolutionIter) {
+            loop {
+                match solver.step() {
+                    super::Step::Yield => {
+                        panic!("occurs check should prevent solution: {:#?}", solver)
+                    }
+                    super::Step::Continue => continue,
+                    super::Step::Done => break,
+                }
+            }
         }
     }
 }

@@ -171,13 +171,16 @@ of the `puzzle` rule are reversed.
 For both SWI Prolog and Logru, this makes the Puzzle a lot slower to solve (not surprising since
 AFAIK SWI Prolog uses the same search order).
 
-While Logru takes about 52ms to solve the Puzzle and to conclude that there are no further
-solutions, Prolog takes about 25ms to find the solution and an additional 6ms to rule out any
-further solutions for a total of 31ms.
+While Logru takes about 48ms to solve the Puzzle and to conclude that there are no further solutions
+on the machine at hand, Prolog takes about 13ms to find the solution and an additional 4ms to rule
+out any further solutions for a total of 17ms on the same machine.
 
 A large portion of that difference is apparently caused by the occurs check, which seems to be off
 by default in Prolog. In a version of Logru compiled without occurs check, the same puzzle is solved
-in ~35ms.
+in ~23ms.
+
+Although even with the occurs check enabled, SWI Prolog is only a few milliseconds slower, so there
+are likely other optimizations at play, too.
 
 ```
 ?- :load testfiles/zebra-reverse.lru
@@ -190,14 +193,15 @@ Took 0.0603s
 ```
 
 ```
-?- consult('zebra-inv.pro').
+?- consult('testfiles/zebra-reverse.lru').
 true.
 
 ?- time(puzzle(Houses)).
-% 86,676 inferences, 0.025 CPU in 0.025 seconds (100% CPU, 3428088 Lips)
+% 86,673 inferences, 0.013 CPU in 0.013 seconds (100% CPU, 6567116 Lips)
 Houses = list(house(yellow, norway, water, diplomat, fox), house(blue, italy, tea, physician, horse), house(red, england, milk, photographer, snails), house(white, spain, juice, violinist, dog), house(green, japan, coffee, painter, zebra)) ;
-% 22,610 inferences, 0.006 CPU in 0.006 seconds (100% CPU, 3518245 Lips)
+% 22,610 inferences, 0.004 CPU in 0.004 seconds (100% CPU, 6459533 Lips)
 false.
+
 ```
 
 

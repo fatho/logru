@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use logru::v2::ast::{CompoundTerm, Rule, Term, Var};
 use logru::v2::parser::Parser;
 use logru::v2::solver::{query_dfs, Solver};
-use logru::v2::stack::{Addr, Arity, Atom, Word, FrozenStack};
+use logru::v2::stack::{Addr, Arity, Atom, FrozenStack, Word};
 use logru::v2::universe::{builtin_atoms, Universe};
 
 fn main() {
@@ -167,7 +167,7 @@ fn term_to_stack(
             Var::Named(name) => {
                 if let Some(bound) = var_scope.get(name.as_ref()) {
                     // bound variable, point target to it
-                    stack[target] = Word::Ptr(Some(*bound)).into();
+                    stack[target] = Word::Ptr(Some(*bound));
                 } else {
                     // fresh variable, simply leave target unassigned, but remember the address
                     var_scope.insert(name.clone(), target);
@@ -177,7 +177,7 @@ fn term_to_stack(
         Term::Compound(compound) => {
             // Allocate term, store it in target, and fill recursively
             let head = compound_term_to_stack(stack, atoms, var_scope, compound);
-            stack[target] = Word::Ptr(Some(head)).into();
+            stack[target] = Word::Ptr(Some(head));
         }
     }
 }
@@ -205,7 +205,7 @@ fn known_compound_term_to_stack(
     // Allocate term, store it in target, and fill recursively
     let arity = args.len();
     let head = stack.alloc_zeroed_range(1 + arity);
-    stack[head] = Word::App(atom, Arity::try_from(arity).unwrap()).into();
+    stack[head] = Word::App(atom, Arity::try_from(arity).unwrap());
     for (off, arg) in args.iter().enumerate() {
         term_to_stack(stack, atoms, var_scope, arg, head.offset(1 + off as u32));
     }

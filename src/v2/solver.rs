@@ -1,8 +1,11 @@
+use std::collections::HashSet;
+
+#[cfg(debug_assertions)]
 use tracing::trace;
 
 use crate::v2::universe::RuleHead;
 
-use super::stack::{Addr, Arity, Atom, DecodedWord, FrozenStack, Word};
+use super::stack::{Addr, Arity, Atom, FrozenStack, Word};
 use super::universe::{builtin_atoms, Rule, RulesQuery, Universe};
 
 pub fn query_dfs<'u>(
@@ -66,6 +69,7 @@ impl<'u> Solver<'u> {
 
             let (goal_addr, goal_term) = self.state.deref_compress(goal);
 
+            #[cfg(debug_assertions)]
             trace!("trying goal: {goal:?} => {goal_term:?}@{goal_addr:?}");
 
             match goal_term {
@@ -77,6 +81,7 @@ impl<'u> Solver<'u> {
                     match atom {
                         // Expand conjunction terms into individual goals
                         builtin_atoms::CONJ => {
+                            #[cfg(debug_assertions)]
                             trace!("decomposed cojunction");
                             // The next `arity` terms on the stack become goals
                             self.state
@@ -85,6 +90,7 @@ impl<'u> Solver<'u> {
                             return true;
                         }
                         _ => {
+                            #[cfg(debug_assertions)]
                             trace!("decomposed user rule");
                             // TODO: look up rule definitions by `atom/arity` and append them to
                             // `alternatives` in reverse order (so that the first definition is on
@@ -127,6 +133,7 @@ impl<'u> Solver<'u> {
 
     fn resume(&mut self, mut mode: Resume) -> bool {
         let Some(current_checkpoint) = self.checkpoints.last() else {
+            #[cfg(debug_assertions)]
             trace!("no more checkpoints");
             return false;
         };
@@ -140,8 +147,10 @@ impl<'u> Solver<'u> {
             }
             let goal = current_checkpoint.state_checkpoint.goal;
             let rule = self.alternatives.pop().expect("existence asserted above");
+            #[cfg(debug_assertions)]
             trace!("trying rule {rule:?} for goal {goal:?}");
             let result = self.state.unify_rule(goal, rule);
+            #[cfg(debug_assertions)]
             trace!(
                 "unification done with outcome {result:?} and stack {:?}",
                 self.state.stack.debug_decoded()
@@ -211,15 +220,15 @@ impl<'u> SearchState<'u> {
         let mut prev = addr;
         let mut cur = addr;
         loop {
-            match DecodedWord::from(self.stack[cur]) {
-                DecodedWord::Ptr(Some(next)) => {
+            match self.stack[cur] {
+                Word::Ptr(Some(next)) => {
                     // TODO: is there a better way for path compression?
                     self.stack[prev] = self.stack[cur];
                     prev = cur;
                     cur = next;
                 }
-                DecodedWord::Ptr(None) => return (cur, DerefTerm::Free),
-                DecodedWord::App(atom, arity) => return (cur, DerefTerm::App(atom, arity)),
+                Word::Ptr(None) => return (cur, DerefTerm::Free),
+                Word::App(atom, arity) => return (cur, DerefTerm::App(atom, arity)),
             }
         }
     }
@@ -227,12 +236,12 @@ impl<'u> SearchState<'u> {
     fn deref_follow(&self, addr: Addr) -> (Addr, DerefTerm) {
         let mut cur = addr;
         loop {
-            match DecodedWord::from(self.stack[cur]) {
-                DecodedWord::Ptr(Some(next)) => {
+            match self.stack[cur] {
+                Word::Ptr(Some(next)) => {
                     cur = next;
                 }
-                DecodedWord::Ptr(None) => return (cur, DerefTerm::Free),
-                DecodedWord::App(atom, arity) => return (cur, DerefTerm::App(atom, arity)),
+                Word::Ptr(None) => return (cur, DerefTerm::Free),
+                Word::App(atom, arity) => return (cur, DerefTerm::App(atom, arity)),
             }
         }
     }
@@ -257,21 +266,25 @@ impl<'u> SearchState<'u> {
         self.unify_stack.push((left, right));
 
         while let Some((left, right)) = self.unify_stack.pop() {
-            let (left_addr, left_term) = self.deref_compress(left);
-            let (right_addr, right_term) = self.deref_compress(right);
+            let (left_addr, left_term) = self.deref_follow(left);
+            let (right_addr, right_term) = self.deref_follow(right);
 
+            #[cfg(debug_assertions)]
             trace!("unifying {left:?}=>{left_term:?}@{left_addr:?} with {right:?}=>{right_term:?}@{right_addr:?}");
 
             let ok = match (left_term, right_term) {
-                (DerefTerm::Free, DerefTerm::Free) => match left_addr.cmp(&right_addr) {
-                    // Point from higher to lower variable
-                    std::cmp::Ordering::Less => self.set_var(right_addr, left_addr),
-                    std::cmp::Ordering::Greater => self.set_var(left_addr, right_addr),
-                    std::cmp::Ordering::Equal => {
-                        // Same variable, nothing to do
+                (DerefTerm::Free, DerefTerm::Free) => {
+                    if left_addr == right_addr {
+                        // same variable
+                        true
+                    } else {
+                        // no ccurs check since both are free
+                        self.stack[right_addr] = Word::Ptr(Some(left_addr));
+                        self.assignments.push(right_addr);
+
                         true
                     }
-                },
+                }
                 // Set free variable to term
                 (DerefTerm::Free, DerefTerm::App(_, _)) => self.set_var(left_addr, right_addr),
                 (DerefTerm::App(_, _), DerefTerm::Free) => self.set_var(right_addr, left_addr),
@@ -279,12 +292,12 @@ impl<'u> SearchState<'u> {
                 (DerefTerm::App(lat, lar), DerefTerm::App(rat, rar)) => {
                     if lat == rat && lar == rar {
                         // check arguments
-                        self.unify_stack.extend(
-                            left_addr
-                                .arg_iter(lar)
-                                .rev()
-                                .zip(right_addr.arg_iter(rar).rev()),
-                        );
+                        let arity = lar.into_raw() as u32;
+                        for arg_idx in (0..arity).rev() {
+                            let off = 1 + arg_idx;
+                            self.unify_stack
+                                .push((left_addr.offset(off), right_addr.offset(off)));
+                        }
                         true
                     } else {
                         false
@@ -309,7 +322,7 @@ impl<'u> SearchState<'u> {
             return false;
         }
 
-        self.stack[var] = DecodedWord::Ptr(Some(target)).into();
+        self.stack[var] = Word::Ptr(Some(target));
         self.assignments.push(var);
 
         true
@@ -317,19 +330,27 @@ impl<'u> SearchState<'u> {
 
     /// Check whether the variable represented by address `var` is referenced from within the term
     /// rooted at address `term`.
-    fn occurs(&mut self, var: Addr, term: Addr) -> bool {
-        self.occurs_stack.push(term);
-        while let Some(term) = self.occurs_stack.pop() {
-            if term == var {
-                self.occurs_stack.clear();
-                return true;
+    fn occurs(&mut self, var: Addr, mut term: Addr) -> bool {
+        loop {
+            match self.stack[term] {
+                Word::Ptr(addr) => {
+                    if let Some(redir) = addr {
+                        // If the pointer redirects, follow first, because then this is not a free
+                        // variable
+                        term = redir;
+                        continue;
+                    } else if term == var {
+                        self.occurs_stack.clear();
+                        return true;
+                    }
+                }
+                Word::App(_, arity) => self.occurs_stack.extend(term.arg_iter(arity)),
             }
-            match DecodedWord::from(self.stack[term]) {
-                DecodedWord::Ptr(addr) => self.occurs_stack.extend(addr),
-                DecodedWord::App(_, arity) => self.occurs_stack.extend(term.arg_iter(arity)),
+            term = match self.occurs_stack.pop() {
+                Some(next) => next,
+                None => return false,
             }
         }
-        false
     }
 
     fn unify_rule(&mut self, goal: Addr, rule: Rule) -> UnifyRule {
@@ -370,20 +391,29 @@ impl<'u> SearchState<'u> {
         let offset = new_start.into_raw() - start.into_raw();
         let new_end = end.offset(offset);
         for i in new_start.range_iter(new_end) {
-            match DecodedWord::from(self.stack[i]) {
-                DecodedWord::Ptr(addr) => {
+            match self.stack[i] {
+                Word::Ptr(addr) => {
                     if let Some(ptr) = addr {
                         // adjust pointer
-                        self.stack[i] = DecodedWord::Ptr(Some(ptr.offset(offset))).into();
+                        self.stack[i] = Word::Ptr(Some(ptr.offset(offset)));
                     }
                 }
-                DecodedWord::App(_, _) => {
+                Word::App(_, _) => {
                     // nothing to fix
                 }
             }
         }
         new_start
     }
+
+    // fn is_cyclic(&mut self, addr: Addr) -> Self {
+    //     // let mut seen = HashSet::new();
+
+    //     // self.occurs_stack.push(value);
+    //     // while let Some(cur) = self.occurs_stack.pop() {
+
+    //     // }
+    // }
 }
 
 /// The result of dereferencing an [`Addr`] to a term.

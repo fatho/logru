@@ -1,6 +1,6 @@
 //! The universe holds the current knowledge in the form of facts and rules.
 
-use super::stack::{Addr, Arity, Atom, DecodedWord, FrozenStack, Stack};
+use super::stack::{Addr, Arity, Atom, FrozenStack, Stack, Word};
 
 /// The universe holds the facts and rules that are defined.
 ///
@@ -81,7 +81,7 @@ impl Universe {
         {
             let head_end = tail.unwrap_or(top);
             for p in head.range_iter(head_end) {
-                if let DecodedWord::Ptr(Some(addr)) = DecodedWord::from(self.store[p]) {
+                if let Word::Ptr(Some(addr)) = self.store[p] {
                     assert!(
                         addr >= head && addr < head_end,
                         "variables in head must only point inside head"
@@ -90,7 +90,7 @@ impl Universe {
             }
             if let Some(tail) = tail {
                 for p in tail.range_iter(top) {
-                    if let DecodedWord::Ptr(Some(addr)) = DecodedWord::from(self.store[p]) {
+                    if let Word::Ptr(Some(addr)) = self.store[p] {
                         assert!(
                             addr >= head && addr < top,
                             "variables in tail must only point inside rule"
@@ -146,7 +146,7 @@ impl<'u> RulesQuery<'u> {
         head: RuleHead,
     ) -> impl DoubleEndedIterator<Item = Rule> + 'a {
         self.rules.iter().copied().filter(move |rule| {
-            let DecodedWord::App(atom, arity) = store[rule.head].into() else {
+            let Word::App(atom, arity) = store[rule.head] else {
                 panic!("rule head is not compound term")
             };
             RuleHead(atom, arity) == head
@@ -217,7 +217,7 @@ pub struct RuleHead(pub Atom, pub Arity);
 #[cfg(test)]
 mod tests {
     use crate::v2::solver::query_dfs;
-    use crate::v2::stack::{Arity, DecodedWord};
+    use crate::v2::stack::{Arity, Word};
 
     use super::{builtin_atoms, Universe};
 
@@ -236,52 +236,52 @@ mod tests {
 
         u.add_rule(|stack| {
             let p = stack.alloc_zeroed_range(3);
-            stack[p] = DecodedWord::App(parent, Arity::new(2)).into();
-            stack[p.offset(1)] = DecodedWord::App(alice, Arity::new(0)).into();
-            stack[p.offset(2)] = DecodedWord::App(bob, Arity::new(0)).into();
+            stack[p] = Word::App(parent, Arity::new(2));
+            stack[p.offset(1)] = Word::App(alice, Arity::new(0));
+            stack[p.offset(2)] = Word::App(bob, Arity::new(0));
             (p, None)
         });
         u.add_rule(|stack| {
             let p = stack.alloc_zeroed_range(3);
-            stack[p] = DecodedWord::App(parent, Arity::new(2)).into();
-            stack[p.offset(1)] = DecodedWord::App(eve, Arity::new(0)).into();
-            stack[p.offset(2)] = DecodedWord::App(alice, Arity::new(0)).into();
+            stack[p] = Word::App(parent, Arity::new(2));
+            stack[p.offset(1)] = Word::App(eve, Arity::new(0));
+            stack[p.offset(2)] = Word::App(alice, Arity::new(0));
             (p, None)
         });
         u.add_rule(|stack| {
             let p = stack.alloc_zeroed_range(3);
-            stack[p] = DecodedWord::App(parent, Arity::new(2)).into();
-            stack[p.offset(1)] = DecodedWord::App(clive, Arity::new(0)).into();
-            stack[p.offset(2)] = DecodedWord::App(alice, Arity::new(0)).into();
+            stack[p] = Word::App(parent, Arity::new(2));
+            stack[p.offset(1)] = Word::App(clive, Arity::new(0));
+            stack[p.offset(2)] = Word::App(alice, Arity::new(0));
             (p, None)
         });
         u.add_rule(|stack| {
             let head = stack.alloc_zeroed_range(3);
-            stack[head] = DecodedWord::App(grandparent, Arity::new(2)).into();
+            stack[head] = Word::App(grandparent, Arity::new(2));
 
             let tail = stack.alloc_zeroed_range(3);
-            stack[tail] = DecodedWord::App(builtin_atoms::CONJ, Arity::new(2)).into();
+            stack[tail] = Word::App(builtin_atoms::CONJ, Arity::new(2));
 
             let p1 = stack.alloc_zeroed_range(3);
-            stack[p1] = DecodedWord::App(parent, Arity::new(2)).into();
-            stack[p1.offset(1)] = DecodedWord::Ptr(Some(head.offset(1))).into();
+            stack[p1] = Word::App(parent, Arity::new(2));
+            stack[p1.offset(1)] = Word::Ptr(Some(head.offset(1)));
             // offset 2 is unbound
 
             let p2 = stack.alloc_zeroed_range(3);
-            stack[p2] = DecodedWord::App(parent, Arity::new(2)).into();
-            stack[p2.offset(1)] = DecodedWord::Ptr(Some(p1.offset(2))).into();
-            stack[p2.offset(2)] = DecodedWord::Ptr(Some(head.offset(2))).into();
+            stack[p2] = Word::App(parent, Arity::new(2));
+            stack[p2.offset(1)] = Word::Ptr(Some(p1.offset(2)));
+            stack[p2.offset(2)] = Word::Ptr(Some(head.offset(2)));
 
-            stack[tail.offset(1)] = DecodedWord::Ptr(Some(p1)).into();
-            stack[tail.offset(2)] = DecodedWord::Ptr(Some(p2)).into();
+            stack[tail.offset(1)] = Word::Ptr(Some(p1));
+            stack[tail.offset(2)] = Word::Ptr(Some(p2));
 
             (head, Some(tail))
         });
 
         let mut s = query_dfs(&mut u, |stack| {
             let head = stack.alloc_zeroed_range(3);
-            stack[head] = DecodedWord::App(grandparent, Arity::new(2)).into();
-            stack[head.offset(2)] = DecodedWord::App(bob, Arity::new(0)).into();
+            stack[head] = Word::App(grandparent, Arity::new(2));
+            stack[head.offset(2)] = Word::App(bob, Arity::new(0));
             head
         });
 

@@ -182,19 +182,6 @@ impl<'s> IndexMut<Addr> for FrozenStack<'s> {
     }
 }
 
-/// A word stored on the solver stack
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct Word(u64);
-
-impl Word {
-    /// The null-pointer word.
-    #[inline(always)]
-    pub const fn null_ptr() -> Self {
-        Word(0)
-    }
-}
-
 /// An address into the solver stack.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -293,7 +280,7 @@ impl TryFrom<usize> for Arity {
 
 /// A word stored on the solver stack
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum DecodedWord {
+pub enum Word {
     /// A redirection to another slot.
     ///
     /// Encoded as `0<31-bit padding><32 bit addr>`
@@ -305,45 +292,9 @@ pub enum DecodedWord {
     App(Atom, Arity),
 }
 
-impl DecodedWord {
-    const PAYLOAD_MASK: u64 = (1 << 32) - 1;
-    const ARITY_MASK: u64 = (1 << 16) - 1;
-    const ARITY_SHIFT: i32 = 32;
-
-    const DISCRIMINATOR_MASK: u64 = 1 << 63;
-    const DISCRIMINATOR_PTR: u64 = 0;
-    const DISCRIMINATOR_APP: u64 = 1 << 63;
-}
-
-impl From<Word> for DecodedWord {
-    #[inline(always)]
-    fn from(value: Word) -> Self {
-        let payload = (value.0 & Self::PAYLOAD_MASK) as u32;
-        match value.0 & Self::DISCRIMINATOR_MASK {
-            Self::DISCRIMINATOR_PTR => DecodedWord::Ptr(Addr::new(payload)),
-            Self::DISCRIMINATOR_APP => {
-                let arity = ((value.0 >> Self::ARITY_SHIFT) & Self::ARITY_MASK) as u16;
-                DecodedWord::App(Atom(payload), Arity(arity))
-            }
-            _ => unreachable!("discriminator mask only contais one bit"),
-        }
-    }
-}
-
-impl From<DecodedWord> for Word {
-    #[inline(always)]
-    fn from(value: DecodedWord) -> Self {
-        let encoded = match value {
-            DecodedWord::Ptr(addr) => {
-                DecodedWord::DISCRIMINATOR_PTR | addr.map_or(0, Addr::into_raw) as u64
-            }
-            DecodedWord::App(atom, arity) => {
-                DecodedWord::DISCRIMINATOR_APP
-                    | ((arity.0 as u64) << DecodedWord::ARITY_SHIFT)
-                    | atom.0 as u64
-            }
-        };
-        Word(encoded)
+impl Word {
+    pub const fn null_ptr() -> Self {
+        Self::Ptr(None)
     }
 }
 
@@ -355,15 +306,15 @@ impl<'a, 's> Debug for DecodedFrozenStack<'a, 's> {
         let width = self.0.inner.stack.len().ilog10() + 1;
         for (i, val) in self.0.inner.stack.iter().enumerate() {
             write!(f, " {i:>w$}: ", w = width as usize)?;
-            match DecodedWord::from(*val) {
-                DecodedWord::Ptr(addr) => {
+            match *val {
+                Word::Ptr(addr) => {
                     if let Some(addr) = addr {
                         writeln!(f, "@{}", addr.into_raw())?;
                     } else {
                         writeln!(f, "@null")?;
                     }
                 }
-                DecodedWord::App(atom, arity) => {
+                Word::App(atom, arity) => {
                     writeln!(f, "{}/{}", atom.into_raw(), arity.into_raw())?;
                 }
             }
@@ -374,34 +325,10 @@ impl<'a, 's> Debug for DecodedFrozenStack<'a, 's> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Addr, Arity, Atom, DecodedWord, Word};
-
-    #[test]
-    fn word_roundtrips() {
-        let examples = [
-            DecodedWord::Ptr(None),
-            DecodedWord::Ptr(Some(Addr::new(1).unwrap())),
-            DecodedWord::Ptr(Some(Addr::new(u32::MAX).unwrap())),
-            DecodedWord::App(Atom::new(0), Arity::new(0)),
-            DecodedWord::App(Atom::new(u32::MAX), Arity::new(16)),
-            DecodedWord::App(Atom::new(1), Arity::new(u16::MAX)),
-        ];
-
-        for ex in examples {
-            let trip1 = Word::from(ex);
-            let trip2 = DecodedWord::from(trip1);
-
-            assert_eq!(ex, trip2);
-        }
-    }
-
-    #[test]
-    fn zero_is_valid_word() {
-        assert_eq!(DecodedWord::from(Word(0)), DecodedWord::Ptr(None));
-    }
+    use super::Word;
 
     #[test]
     fn size_of_word() {
-        assert_eq!(std::mem::size_of::<DecodedWord>(), 8);
+        assert_eq!(std::mem::size_of::<Word>(), 8);
     }
 }

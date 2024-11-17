@@ -2,6 +2,13 @@
 
 use super::stack::{Addr, Arity, Atom, DecodedWord, FrozenStack, Stack};
 
+/// The universe holds the facts and rules that are defined.
+///
+/// Atoms are represented as [`Atom`] values, i.e. integers that can be uniquely allocated in a
+/// given universe via [`Universe::reserve_atom`]. If textual atoms are desired, the user has to
+/// keep the mapping between strings and [`Atom`]s elsewhere.
+///
+/// TODO: implement higher-level interface for this.
 #[derive(Debug, Clone)]
 pub struct Universe {
     store: Stack,
@@ -10,6 +17,7 @@ pub struct Universe {
 }
 
 impl Universe {
+    /// Create a new empty universe.
     pub fn new() -> Self {
         Self {
             store: Stack::new(),
@@ -18,11 +26,22 @@ impl Universe {
         }
     }
 
+    /// Freeze the stack of this universe in its current state, and provide it for manipulation
+    /// through a query engine.
+    ///
+    /// This allows the query engine to reuse the stack, and thus reference data in it, without
+    /// having to make a copy, because the original data will be untouched.
+    ///
+    /// TODO: investigate if just copying is maybe cheaper after all
     pub fn freeze_for_query(&mut self) -> (RulesQuery<'_>, FrozenStack<'_>) {
         (RulesQuery { rules: &self.rules }, self.store.freeze())
     }
 
-    /// Reserve a new unused atom
+    /// Reserve a new unused atom.
+    ///
+    /// # Panics
+    ///
+    /// This panics if more than [`builtin_atoms::RESERVED_LIMIT`] atoms have been reserved.
     pub fn reserve_atom(&mut self) -> Atom {
         assert!(
             self.free_atom < builtin_atoms::RESERVED_LIMIT,
@@ -33,13 +52,32 @@ impl Universe {
         ret
     }
 
-    pub fn add_rule(&mut self, build: impl FnOnce(&mut Stack) -> (Addr, Option<Addr>)) {
-        // Allocate head and tail
-        let (head, tail) = build(&mut self.store);
+    /// Add a rule or fact (i.e. a rule without tail that is thus always true) to the universe.
+    ///
+    /// The provided closure receives the stack on which it needs to construct the term, and needs
+    /// to return the address where the rule head is allocated, and optionally the address where the
+    /// rule tail is allocated.
+    ///
+    /// The allocations need to fulfill the following creteria:
+    /// 1. The head of the rule must be the first allocation.
+    /// 2. Pointers in the head may only point to other stack cells of the head.
+    /// 3. The tail allocation must immediately follow the head allocation.
+    /// 4. Pointers in the tail may only point to other stack cells in the head or tail.
+    ///
+    /// TODO: the first address should always be the current top of the stack
+    ///
+    pub fn add_rule(&mut self, build: impl FnOnce(&mut FrozenStack<'_>) -> (Addr, Option<Addr>)) {
+        // Allocate head and tail on a temporarily frozen stack, so that existing data is protected
+        // against manipulation.
+        let mut builder_stack = self.store.freeze();
+        let (head, tail) = build(&mut builder_stack);
+        builder_stack.refreeze();
+        drop(builder_stack);
+
         let top = self.store.top();
 
         // Validate pointers stay within bounds
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         {
             let head_end = tail.unwrap_or(top);
             for p in head.range_iter(head_end) {
@@ -69,6 +107,13 @@ impl Universe {
         });
     }
 
+    /// Remember the current state of the universe, so that it can later be reverted to.
+    ///
+    /// Since a universe can only ever be added to with [`Universe::add_rule`] and
+    /// [`Universe::reserve_atom`], checkpoints follow a stack semantic: Restoring a checkpoint
+    /// discards all data added after the checkpoint.
+    ///
+    /// That means, restoring a later checkpoint after an earlier checkpoint will have no effect.
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
             stack_pos: self.store.top(),
@@ -77,6 +122,9 @@ impl Universe {
         }
     }
 
+    /// Discard all data added to the universe since the creation of the checkpoint.
+    ///
+    /// Restoring a later checkpoint after already restoring an earlier one has no effect.
     pub fn restore(&mut self, checkpoint: Checkpoint) {
         self.store.free(checkpoint.stack_pos);
         self.rules.truncate(checkpoint.rules_pos);
@@ -84,6 +132,9 @@ impl Universe {
     }
 }
 
+/// Lookup data structure for finding rules matching a certain head (defined by atom and arity).
+///
+/// TODO: investigate performance impact of linear search vs building a lookup data structure
 pub struct RulesQuery<'u> {
     rules: &'u [Rule],
 }
@@ -109,6 +160,16 @@ impl Default for Universe {
     }
 }
 
+/// Marker capturing the state of the universe at a certain point, so that it can later be reverted
+/// back to that state.
+///
+/// This captures:
+/// - The definitions on the stack.
+/// - The defined rules.
+/// - The next free atom value that can be reserved.
+///
+/// This can be useful for varying parts of the universe for different queries, while keeping the
+/// base definitions shared.
 #[derive(Debug, Clone, Copy)]
 pub struct Checkpoint {
     stack_pos: Addr,

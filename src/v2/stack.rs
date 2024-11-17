@@ -149,6 +149,11 @@ impl<'s> FrozenStack<'s> {
         self.inner.top()
     }
 
+    /// Move the frozen mark up to the current top of the stack.
+    pub fn refreeze(&mut self) {
+        self.limit = self.top();
+    }
+
     pub fn debug_decoded<'a>(&'a self) -> DecodedFrozenStack<'a, 's> {
         DecodedFrozenStack(self)
     }

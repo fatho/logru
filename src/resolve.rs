@@ -1,4 +1,4 @@
-use crate::search::{ResolveContext, Resolver, SolutionState};
+use crate::search::{ResolveContext, Resolved, Resolver, SolutionState};
 use crate::universe::CompiledRule;
 use crate::{term_arena, RuleSet};
 
@@ -45,6 +45,25 @@ impl<'a> RuleResolver<'a> {
             None
         }
     }
+
+    fn apply_first_rule(
+        &self,
+        mut rules: &'a [CompiledRule],
+        goal_id: term_arena::TermId,
+        context: &mut ResolveContext,
+    ) -> Option<&'a [CompiledRule]> {
+        while let Some((first, rest)) = rules.split_first() {
+            rules = rest;
+            let result = self.unify_rule(goal_id, first, context.solution_mut());
+            if let Some(goals) = result {
+                context.extend_goals(goals);
+                return Some(rest);
+            } else {
+                context.reset();
+            }
+        }
+        None
+    }
 }
 
 impl<'a> Resolver for RuleResolver<'a> {
@@ -53,14 +72,25 @@ impl<'a> Resolver for RuleResolver<'a> {
     #[inline(always)]
     fn resolve(
         &mut self,
-        _goal_id: term_arena::TermId,
+        goal_id: term_arena::TermId,
         goal_term: term_arena::Term,
-        _context: &mut ResolveContext,
-    ) -> Self::Choice {
-        match goal_term {
-            // TODO: make unbound variables vacuously true
-            term_arena::Term::Var(_) => &[],
-            term_arena::Term::App(sym, _) => self.rules.rules_by_head(sym),
+        context: &mut ResolveContext,
+    ) -> Resolved<Self::Choice> {
+        if let term_arena::Term::App(sym, _) = goal_term {
+            let rules = self.rules.rules_by_head(sym);
+            if let Some(rest) = self.apply_first_rule(rules, goal_id, context) {
+                if rest.is_empty() {
+                    Resolved::Success
+                } else {
+                    Resolved::SuccessRetry(rest)
+                }
+            } else {
+                Resolved::Fail
+            }
+        } else {
+            // Reject all other terms as potential goals in this resolver
+            // That way, eventually another resolver may pick them up.
+            Resolved::Fail
         }
     }
 
@@ -71,16 +101,11 @@ impl<'a> Resolver for RuleResolver<'a> {
         goal_id: term_arena::TermId,
         context: &mut ResolveContext,
     ) -> bool {
-        while let Some((first, rest)) = choice.split_first() {
+        if let Some(rest) = self.apply_first_rule(choice, goal_id, context) {
             *choice = rest;
-            let result = self.unify_rule(goal_id, first, context.solution_mut());
-            if let Some(goals) = result {
-                context.extend_goals(goals);
-                return true;
-            } else {
-                context.reset();
-            }
+            true
+        } else {
+            false
         }
-        false
     }
 }

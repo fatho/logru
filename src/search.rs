@@ -52,7 +52,7 @@ pub trait Resolver {
         goal_id: term_arena::TermId,
         goal_term: term_arena::Term,
         context: &mut ResolveContext,
-    ) -> Self::Choice;
+    ) -> Resolved<Self::Choice>;
 
     fn resume(
         &mut self,
@@ -107,11 +107,11 @@ impl<'c> ResolveContext<'c> {
 pub enum Resolved<C> {
     /// The goal failed.
     Fail,
-    /// The goal resolved to a single choice that was applied
-    Single,
-    /// The goal resolved to multiple alternatives, captured in the type `C`, that will be tried one
-    /// after the other.
-    Multi(C),
+    /// The goal resolved to a single choice that was successfully applied to the state.
+    Success,
+    /// The goal resolved to multiple alternatives. The first was already applied to the state,
+    /// while the remaining choice is captured in the type `C`.
+    SuccessRetry(C),
 }
 
 impl<R: Resolver> Resolver for &mut R {
@@ -123,7 +123,7 @@ impl<R: Resolver> Resolver for &mut R {
         goal_id: term_arena::TermId,
         goal_term: term_arena::Term,
         context: &mut ResolveContext,
-    ) -> Self::Choice {
+    ) -> Resolved<Self::Choice> {
         (*self).resolve(goal_id, goal_term, context)
     }
 
@@ -161,8 +161,9 @@ pub struct SolutionIter<R: Resolver> {
 struct Checkpoint<R: Resolver> {
     /// The goal for which we needed to make the choice.
     goal: term_arena::TermId,
-    /// The choice state of the resolver at this checkpoint.
-    choice: R::Choice,
+    /// The choice state of the resolver at this checkpoint. If there is no choice, the checkpoint
+    /// cannot resume and the search will backtrack immediately.
+    choice: Option<R::Choice>,
     /// The number of unresolved goals at the time of the choice. Used for popping goals from the
     /// stack that were added by a matching rule.
     goals_checkpoint: usize,
@@ -251,30 +252,34 @@ impl<R: Resolver> SolutionIter<R> {
                 checkpoint: &solution_checkpoint,
                 goal_len: goals_checkpoint,
             };
-            let choice = self.resolver.resolve(goal_id, goal_term, &mut context);
+            let resolved = match goal_term {
+                // Unbound variables are vacuously true
+                term_arena::Term::Var(_) => Resolved::Success,
+                // Send all other terms into the resolver
+                _ => self.resolver.resolve(goal_id, goal_term, &mut context),
+            };
+            let choice = match resolved {
+                Resolved::Fail => {
+                    // Restore before state
+                    self.unresolved_goals.push(goal_id);
+                    // Then resume from current checkpoint
+                    return self.resume_or_backtrack();
+                }
+                // A change was applied here, remember the choice
+                Resolved::Success => None,
+                Resolved::SuccessRetry(choice) => Some(choice),
+            };
 
+            // At this point, the goal was successfully resolved
             self.checkpoints.push(Checkpoint {
                 goal,
                 choice,
                 solution_checkpoint,
                 goals_checkpoint,
             });
-        }
-        // Then we backtrack to the topmost checkpoint (which, in case we just added one above,
-        // means that we likely don't actually need to backtrack at all) that still has a matching
-        // alternative left to try.
-        if self.resume_or_backtrack() {
-            // Found a choice to commit to
-            if self.unresolved_goals.is_empty() {
-                // If no goals remain, we are done
-                Step::Yield
-            } else {
-                // Otherwise, rinse & repeat with remaining goals
-                Step::Continue
-            }
+            self.yield_or_continue()
         } else {
-            // couldn't backtrack to any possible choice, we're done
-            Step::Done
+            self.resume_or_backtrack()
         }
     }
 
@@ -313,21 +318,23 @@ impl<R: Resolver> SolutionIter<R> {
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
 
-        let mut context = ResolveContext {
-            solution: &mut self.solution,
-            goal_stack: &mut self.unresolved_goals,
-            checkpoint: &checkpoint.solution_checkpoint,
-            goal_len: checkpoint.goals_checkpoint,
+        let success = match &mut checkpoint.choice {
+            None => false,
+            Some(choice) => {
+                let mut context = ResolveContext {
+                    solution: &mut self.solution,
+                    goal_stack: &mut self.unresolved_goals,
+                    checkpoint: &checkpoint.solution_checkpoint,
+                    goal_len: checkpoint.goals_checkpoint,
+                };
+                self.resolver.resume(choice, checkpoint.goal, &mut context)
+            }
         };
-        let success = self
-            .resolver
-            .resume(&mut checkpoint.choice, checkpoint.goal, &mut context);
 
         if success {
             true
         } else {
-            // checkpoint exhausted, reset state, put goal back and discard
-            context.reset();
+            // checkpoint exhausted, discard checkpoint and put goal back
             let discarded = self.checkpoints.pop().expect("we know there is one here");
             self.unresolved_goals.push(discarded.goal);
             false
@@ -335,7 +342,7 @@ impl<R: Resolver> SolutionIter<R> {
     }
 
     /// Backtrack to the first checkpoint that allows making a choice
-    fn resume_or_backtrack(&mut self) -> bool {
+    fn resume_or_backtrack(&mut self) -> Step {
         while let Some(checkpoint) = self.checkpoints.last() {
             // restore to topmost checkpoint
             self.solution.restore(&checkpoint.solution_checkpoint);
@@ -343,11 +350,24 @@ impl<R: Resolver> SolutionIter<R> {
             // then try to resume it
             if self.resume_checkpoint() {
                 // Success, continue search
-                return true;
+                return self.yield_or_continue();
             }
             // couldn't resume, the checkpoint was discarded, so we can simply loop to the next
         }
-        false
+        Step::Done
+    }
+
+    /// Depending on whether the current state is a solution or not, return [`Step::Yield`] or
+    /// [`Step::Continue`].
+    fn yield_or_continue(&self) -> Step {
+        // Found a choice to commit to
+        if self.unresolved_goals.is_empty() {
+            // If no goals remain, we are done
+            Step::Yield
+        } else {
+            // Otherwise, rinse & repeat with remaining goals
+            Step::Continue
+        }
     }
 }
 

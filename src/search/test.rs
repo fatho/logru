@@ -1,5 +1,5 @@
 use super::*;
-use crate::{ast::*, SymbolStore};
+use crate::{ast::*, RuleResolver, RuleSet, SymbolStore};
 
 #[test]
 fn genealogy() {

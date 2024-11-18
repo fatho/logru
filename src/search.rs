@@ -11,7 +11,6 @@ mod test;
 use crate::{
     ast::{self, Query, Var},
     term_arena::{self, TermArena},
-    universe::{CompiledRule, RuleSet},
 };
 
 /// Solve queries against the universe using a depth-first-search.
@@ -43,17 +42,6 @@ pub fn query_dfs<R: Resolver>(resolver: R, query: &Query) -> SolutionIter<R> {
     }
 }
 
-#[derive(Debug)]
-pub struct RuleResolver<'a> {
-    rules: &'a RuleSet,
-}
-
-impl<'a> RuleResolver<'a> {
-    pub fn new(rules: &'a RuleSet) -> Self {
-        Self { rules }
-    }
-}
-
 /// The resolver is responsible for solving goals, e.g. through unification of variables or
 /// decomposing them into smaller goals.
 pub trait Resolver {
@@ -74,6 +62,7 @@ pub trait Resolver {
     ) -> bool;
 }
 
+/// The interface into the search state that is provided to a [`Resolver`] for resolving goals.
 pub struct ResolveContext<'c> {
     solution: &'c mut SolutionState,
     goal_stack: &'c mut Vec<term_arena::TermId>,
@@ -82,18 +71,33 @@ pub struct ResolveContext<'c> {
 }
 
 impl<'c> ResolveContext<'c> {
+    /// Provides mutable access to the solution state.
+    #[inline(always)]
     pub fn solution_mut(&mut self) -> &mut SolutionState {
         self.solution
     }
 
+    /// Provides access to the solution state.
+    #[inline(always)]
+    pub fn solution(&self) -> &SolutionState {
+        self.solution
+    }
+
+    /// Push an additional goal to the stack, to be resolved later.
+    #[inline(always)]
     pub fn push_goal(&mut self, goal: term_arena::TermId) {
         self.goal_stack.push(goal);
     }
 
+    /// Extend the goal stack from the provided iterator. The last item will end up on top of the
+    /// stack, and thus the next goal to be resolved.
+    #[inline(always)]
     pub fn extend_goals(&mut self, new_goals: impl Iterator<Item = term_arena::TermId>) {
         self.goal_stack.extend(new_goals);
     }
 
+    /// Reset the solution state to the current choice point.
+    #[inline(always)]
     pub fn reset(&mut self) {
         self.goal_stack.truncate(self.goal_len);
         self.solution.restore(self.checkpoint);
@@ -113,6 +117,7 @@ pub enum Resolved<C> {
 impl<R: Resolver> Resolver for &mut R {
     type Choice = R::Choice;
 
+    #[inline(always)]
     fn resolve(
         &mut self,
         goal_id: term_arena::TermId,
@@ -122,6 +127,7 @@ impl<R: Resolver> Resolver for &mut R {
         (*self).resolve(goal_id, goal_term, context)
     }
 
+    #[inline(always)]
     fn resume(
         &mut self,
         choice: &mut Self::Choice,
@@ -129,42 +135,6 @@ impl<R: Resolver> Resolver for &mut R {
         context: &mut ResolveContext,
     ) -> bool {
         (*self).resume(choice, goal_id, context)
-    }
-}
-
-impl<'a> Resolver for RuleResolver<'a> {
-    type Choice = &'a [CompiledRule];
-
-    fn resolve(
-        &mut self,
-        _goal_id: term_arena::TermId,
-        goal_term: term_arena::Term,
-        _context: &mut ResolveContext,
-    ) -> Self::Choice {
-        match goal_term {
-            // TODO: make unbound variables vacuously true
-            term_arena::Term::Var(_) => &[],
-            term_arena::Term::App(sym, _) => self.rules.rules_by_head(sym),
-        }
-    }
-
-    fn resume(
-        &mut self,
-        choice: &mut Self::Choice,
-        goal_id: term_arena::TermId,
-        context: &mut ResolveContext,
-    ) -> bool {
-        while let Some((first, rest)) = choice.split_first() {
-            *choice = rest;
-            let result = context.solution_mut().unify_rule(goal_id, first);
-            if let Some(goals) = result {
-                context.extend_goals(goals);
-                return true;
-            } else {
-                context.reset();
-            }
-        }
-        false
     }
 }
 
@@ -228,7 +198,8 @@ impl<R: Resolver> SolutionIter<R> {
     ///
     /// ```
     /// # use logru::ast::{self, Rule};
-    /// # use logru::search::{RuleResolver, Step};
+    /// # use logru::resolve::RuleResolver;
+    /// # use logru::search::Step;
     /// # let mut syms = logru::SymbolStore::new();
     /// # let mut r = logru::RuleSet::new();
     /// # let s = syms.get_or_insert_named("s");
@@ -409,8 +380,12 @@ pub struct SolutionState {
     occurs_stack: Vec<term_arena::TermId>,
 }
 
+/// A snapshot of the [`SolutionState`] that can be reverted back to.
+///
+/// Solution checkpoints work in a stack-like fashion: after restoring an older one, restoring a
+/// more recent checkpoint will have no effect.
 #[derive(Debug)]
-struct SolutionCheckpoint {
+pub struct SolutionCheckpoint {
     operations_checkpoint: usize,
     variables_checkpoint: usize,
     terms_checkpoint: term_arena::Checkpoint,
@@ -428,15 +403,28 @@ impl SolutionState {
         }
     }
 
-    /// Allocate more goal variables (which needs to be done when rules are instantiated).
-    fn allocate_vars(&mut self, num_vars: usize) {
+    /// Allocate a number of unbound goal variables (needed by [`Resolver`]s to decompose goals),
+    /// and return the start of the allocation.
+    ///
+    /// NOTE: Calling this with `0` will not allocate any variables and instead return a variable
+    /// one past the highest valid variable.
+    #[inline(always)]
+    pub fn allocate_vars(&mut self, num_vars: usize) -> Var {
+        let start = self.variables.len();
         self.variables.resize(self.variables.len() + num_vars, None);
+        Var::from_ord(start)
+    }
+
+    /// Allocate a single unbound variable.
+    #[inline(always)]
+    pub fn allocate_var(&mut self) -> Var {
+        self.allocate_vars(1)
     }
 
     /// Assign a value to a variable and record this operation in the undo log. A variable may only
     /// be assigned once, and the value may not contain the variable in question in order to guard
     /// against infinite terms.
-    fn set_var(&mut self, var: Var, value: term_arena::TermId) -> bool {
+    pub fn set_var(&mut self, var: Var, value: term_arena::TermId) -> bool {
         debug_assert!(self.variables[var.ord()].is_none());
 
         if self.occurs(var, value) {
@@ -480,7 +468,7 @@ impl SolutionState {
     }
 
     /// Create a checkpoint for undoing all operations that happened after the checkpoint.
-    fn checkpoint(&self) -> SolutionCheckpoint {
+    pub fn checkpoint(&self) -> SolutionCheckpoint {
         SolutionCheckpoint {
             operations_checkpoint: self.assignments.len(),
             variables_checkpoint: self.variables.len(),
@@ -489,7 +477,7 @@ impl SolutionState {
     }
 
     /// Undo all operations that have been applied to the solution since the checkpoint was created.
-    fn restore(&mut self, checkpoint: &SolutionCheckpoint) {
+    pub fn restore(&mut self, checkpoint: &SolutionCheckpoint) {
         // NOTE: we also potentially undo assignments of variables that would be truncated in the
         // next step, but profiling showed that it doesn't make a difference if we were to omit
         // those variables from the undo log.
@@ -531,7 +519,10 @@ impl SolutionState {
     /// Follow the assignment of variables until reaching either an unassigned variable or an
     /// application term. Used by unification for applying substitution on-the-fly rather than
     /// needing to create a bunch of copies of terms.
-    fn follow_vars(&self, mut term: term_arena::TermId) -> (term_arena::TermId, term_arena::Term) {
+    pub fn follow_vars(
+        &self,
+        mut term: term_arena::TermId,
+    ) -> (term_arena::TermId, term_arena::Term) {
         loop {
             match self.terms.get_term(term) {
                 term_arena::Term::Var(var) => {
@@ -553,7 +544,7 @@ impl SolutionState {
     /// When unification was succesul, `true` is returned, otherwise `false`. In case of a
     /// unification failure, the solution is in an undefined state, so a checkpoint must be used for
     /// restoring it to its pre-unification state if desired.
-    fn unify(&mut self, goal_term: term_arena::TermId, rule_term: term_arena::TermId) -> bool {
+    pub fn unify(&mut self, goal_term: term_arena::TermId, rule_term: term_arena::TermId) -> bool {
         // Step 1: transitively dereference variable terms.
         // This is important so that substitutions become visible here.
         let (goal_term_id, goal_term) = self.follow_vars(goal_term);
@@ -600,32 +591,16 @@ impl SolutionState {
         }
     }
 
-    /// Unify a goal term with a rule and return the new sub goals if the unification was
-    /// successful.
-    fn unify_rule<'a>(
-        &mut self,
-        goal_term: term_arena::TermId,
-        rule: &'a CompiledRule,
-    ) -> Option<impl Iterator<Item = term_arena::TermId> + 'a> {
-        // add uninstantiated variables for the rule
-        let var_offset = self.variables.len();
-        self.allocate_vars(rule.var_slots());
+    /// Provide access to the terms defined in this solution.
+    #[inline(always)]
+    pub fn terms(&self) -> &TermArena {
+        &self.terms
+    }
 
-        // instantiate head for now
-        let (head, head_blueprint) = rule.head();
-        let conv_rule_head = self.terms.instantiate_blueprint(head_blueprint, var_offset);
-        let instantiated_rule_head = conv_rule_head(head);
-
-        if self.unify(goal_term, instantiated_rule_head) {
-            // instantiate tail terms
-            let (tail, tail_blueprint) = rule.tail();
-            let conv_rule_tail = self.terms.instantiate_blueprint(tail_blueprint, var_offset);
-            // and return the updated term IDs (in reverse order) so that the originally leftmost
-            // goal ends up on the top of the goal stack, and hence is processed next.
-            Some(tail.iter().rev().map(move |tail| conv_rule_tail(*tail)))
-        } else {
-            None
-        }
+    /// Provide mutable access to the terms defined in this solution.
+    #[inline(always)]
+    pub fn terms_mut(&mut self) -> &mut TermArena {
+        &mut self.terms
     }
 }
 

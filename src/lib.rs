@@ -82,7 +82,7 @@
 //!
 //! ```
 //! # use logru::ast::{self, Rule};
-//! # use logru::search::RuleResolver;
+//! # use logru::resolve::RuleResolver;
 //! # let mut syms = logru::SymbolStore::new();
 //! # let mut r = logru::RuleSet::new();
 //! # let s = syms.get_or_insert_named("s");
@@ -145,10 +145,12 @@
 //!
 
 pub mod ast;
+pub mod resolve;
 pub mod search;
 pub mod term_arena;
 pub mod textual;
 pub mod universe;
 
+pub use resolve::RuleResolver;
 pub use search::query_dfs;
 pub use universe::{RuleSet, SymbolStore};

@@ -11,7 +11,8 @@ pub use parser::{ParseError, ParseErrorKind};
 
 use crate::{
     ast::Query,
-    search::{self, RuleResolver, SolutionIter},
+    resolve::RuleResolver,
+    search::{self, SolutionIter},
     universe::{RuleSet, SymbolStore},
 };
 

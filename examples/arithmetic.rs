@@ -7,7 +7,7 @@ fn main() {
         .unwrap();
 
     let query = u.prepare_query("mul(A,A,B).").unwrap();
-    let solutions = query_dfs(u.rules(), &query);
+    let solutions = query_dfs(u.resolver(), &query);
 
     for solution in solutions.take(10) {
         println!("SOLUTION:");

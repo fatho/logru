@@ -53,9 +53,10 @@ fn genealogy() {
             .when(parent, vec![p.into(), c2.into()])
     }));
 
+    let mut resolver = RuleResolver::new(&r);
     // query all known grandparents of eve
     let solutions = query_dfs(
-        &r,
+        &mut resolver,
         &exists(|[x]| Query::single(grandparent, vec![x.into(), eve.into()])),
     );
     assert_eq!(
@@ -65,7 +66,7 @@ fn genealogy() {
 
     // query all grandchildren of bob
     let solutions = query_dfs(
-        &r,
+        &mut resolver,
         &exists(|[x]| Query::single(grandparent, vec![bob.into(), x.into()])),
     );
     assert_eq!(
@@ -75,7 +76,7 @@ fn genealogy() {
 
     // query all siblings of eve
     let solutions = query_dfs(
-        &r,
+        &mut resolver,
         &exists(|[x]| Query::single(siblings, vec![eve.into(), x.into()])),
     );
     assert_eq!(
@@ -137,12 +138,19 @@ fn arithmetic() {
         .when(add, vec![x.into(), y.into(), z.into()])
     }));
 
+    let mut resolver = RuleResolver::new(&r);
     // query all zero numbers
-    let solutions = query_dfs(&r, &exists(|[x]| Query::single(is_zero, vec![x.into()])));
+    let solutions = query_dfs(
+        &mut resolver,
+        &exists(|[x]| Query::single(is_zero, vec![x.into()])),
+    );
     assert_eq!(solutions.collect::<Vec<_>>(), vec![vec![Some(z.into())],]);
 
     // query the first natural numbers
-    let solutions = query_dfs(&r, &exists(|[x]| Query::single(is_natural, vec![x.into()])));
+    let solutions = query_dfs(
+        &mut resolver,
+        &exists(|[x]| Query::single(is_natural, vec![x.into()])),
+    );
     assert_eq!(
         solutions.take(3).collect::<Vec<_>>(),
         vec![
@@ -154,7 +162,7 @@ fn arithmetic() {
 
     // compute 2 + 1
     let solutions = query_dfs(
-        &r,
+        &mut resolver,
         &exists(|[x]| {
             Query::single(
                 add,
@@ -176,7 +184,7 @@ fn arithmetic() {
 
     // compute 3 - 2
     let solutions = query_dfs(
-        &r,
+        &mut resolver,
         &exists(|[x]| {
             Query::single(
                 add,

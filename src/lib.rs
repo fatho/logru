@@ -82,6 +82,7 @@
 //!
 //! ```
 //! # use logru::ast::{self, Rule};
+//! # use logru::solver::RuleResolver;
 //! # let mut syms = logru::SymbolStore::new();
 //! # let mut r = logru::CompiledRuleDb::new();
 //! # let s = syms.get_or_insert_named("s");
@@ -119,8 +120,10 @@
 //!         ],
 //!     )
 //! });
+//! // Construct a resolver that allows the search to use the rules we just defined:
+//! let resolver = RuleResolver::new(&r);
 //! // Obtain an iterator that allows us to exhaustively search the solution space:
-//! let solutions = logru::query_dfs(&r, &query);
+//! let solutions = logru::query_dfs(resolver, &query);
 //! // Sanity check that there is only one solution, and it is the expected one
 //! assert_eq!(
 //!     solutions.collect::<Vec<_>>(),

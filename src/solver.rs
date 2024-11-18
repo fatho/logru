@@ -8,7 +8,7 @@
 mod test;
 
 use crate::{
-    ast::{self, Query, Sym, Var},
+    ast::{self, Query, Var},
     term_arena::{self, TermArena},
     universe::{CompiledRule, CompiledRuleDb},
 };
@@ -20,7 +20,7 @@ use crate::{
 /// rules are left-recursive.
 ///
 /// For a usage example, see the [top-level example](crate#example).
-pub fn query_dfs<'a>(rules: &'a CompiledRuleDb, query: &Query) -> SolutionIter<'a> {
+pub fn query_dfs<R: Resolver>(resolver: R, query: &Query) -> SolutionIter<R> {
     // determine how many goal variables we need to allocate
     let max_var = query.count_var_slots();
 
@@ -30,7 +30,7 @@ pub fn query_dfs<'a>(rules: &'a CompiledRuleDb, query: &Query) -> SolutionIter<'
 
     // initialize solver
     SolutionIter {
-        rules,
+        resolver,
         unresolved_goals: query
             .goals
             .iter()
@@ -42,6 +42,131 @@ pub fn query_dfs<'a>(rules: &'a CompiledRuleDb, query: &Query) -> SolutionIter<'
     }
 }
 
+#[derive(Debug)]
+pub struct RuleResolver<'a> {
+    rules: &'a CompiledRuleDb,
+}
+
+impl<'a> RuleResolver<'a> {
+    pub fn new(rules: &'a CompiledRuleDb) -> Self {
+        Self { rules }
+    }
+}
+
+/// The resolver is responsible for solving goals, e.g. through unification of variables or
+/// decomposing them into smaller goals.
+pub trait Resolver {
+    type Choice: std::fmt::Debug;
+
+    fn resolve(
+        &mut self,
+        goal_id: term_arena::TermId,
+        goal_term: term_arena::Term,
+        context: &mut ResolveContext,
+    ) -> Self::Choice;
+
+    fn resume(
+        &mut self,
+        choice: &mut Self::Choice,
+        goal_id: term_arena::TermId,
+        context: &mut ResolveContext,
+    ) -> bool;
+}
+
+pub struct ResolveContext<'c> {
+    solution: &'c mut SolutionState,
+    goal_stack: &'c mut Vec<term_arena::TermId>,
+    checkpoint: &'c SolutionCheckpoint,
+    goal_len: usize,
+}
+
+impl<'c> ResolveContext<'c> {
+    pub fn solution_mut(&mut self) -> &mut SolutionState {
+        self.solution
+    }
+
+    pub fn push_goal(&mut self, goal: term_arena::TermId) {
+        self.goal_stack.push(goal);
+    }
+
+    pub fn extend_goals(&mut self, new_goals: impl Iterator<Item = term_arena::TermId>) {
+        self.goal_stack.extend(new_goals);
+    }
+
+    pub fn reset(&mut self) {
+        self.goal_stack.truncate(self.goal_len);
+        self.solution.restore(self.checkpoint);
+    }
+}
+
+pub enum Resolved<C> {
+    /// The goal failed.
+    Fail,
+    /// The goal resolved to a single choice that was applied
+    Single,
+    /// The goal resolved to multiple alternatives, captured in the type `C`, that will be tried one
+    /// after the other.
+    Multi(C),
+}
+
+impl<R: Resolver> Resolver for &mut R {
+    type Choice = R::Choice;
+
+    fn resolve(
+        &mut self,
+        goal_id: term_arena::TermId,
+        goal_term: term_arena::Term,
+        context: &mut ResolveContext,
+    ) -> Self::Choice {
+        (*self).resolve(goal_id, goal_term, context)
+    }
+
+    fn resume(
+        &mut self,
+        choice: &mut Self::Choice,
+        goal_id: term_arena::TermId,
+        context: &mut ResolveContext,
+    ) -> bool {
+        (*self).resume(choice, goal_id, context)
+    }
+}
+
+impl<'a> Resolver for RuleResolver<'a> {
+    type Choice = &'a [CompiledRule];
+
+    fn resolve(
+        &mut self,
+        _goal_id: term_arena::TermId,
+        goal_term: term_arena::Term,
+        _context: &mut ResolveContext,
+    ) -> Self::Choice {
+        match goal_term {
+            // TODO: make unbound variables vacuously true
+            term_arena::Term::Var(_) => &[],
+            term_arena::Term::App(sym, _) => self.rules.rules_by_head(sym),
+        }
+    }
+
+    fn resume(
+        &mut self,
+        choice: &mut Self::Choice,
+        goal_id: term_arena::TermId,
+        context: &mut ResolveContext,
+    ) -> bool {
+        while let Some((first, rest)) = choice.split_first() {
+            *choice = rest;
+            let result = context.solution_mut().unify_rule(goal_id, first);
+            if let Some(goals) = result {
+                context.extend_goals(goals);
+                return true;
+            } else {
+                context.reset();
+            }
+        }
+        false
+    }
+}
+
 /// Iterator over all solutions for a given query.
 ///
 /// There are two ways of using this type to explore the solution space:
@@ -49,26 +174,24 @@ pub fn query_dfs<'a>(rules: &'a CompiledRuleDb, query: &Query) -> SolutionIter<'
 /// 2. Using the [SolutionIter::step] method which returns after each intermediate step as well.
 ///    This can be useful for implementing cancellation.
 #[derive(Debug)]
-pub struct SolutionIter<'s> {
+pub struct SolutionIter<R: Resolver> {
     /// The rule database that can be used for resolving queries.
-    rules: &'s CompiledRuleDb,
+    resolver: R,
     /// Goals that still need to be solved
     unresolved_goals: Vec<term_arena::TermId>,
     /// Checkpoints created for past decisions, used for backtracking
-    checkpoints: Vec<Checkpoint>,
+    checkpoints: Vec<Checkpoint<R>>,
     /// Current (partial) solution
     solution: SolutionState,
 }
 
 /// A solver checkpoint that can be used for backtracking to an earlier choice point.
 #[derive(Debug)]
-struct Checkpoint {
+struct Checkpoint<R: Resolver> {
     /// The goal for which we needed to make the choice.
     goal: term_arena::TermId,
-    /// The symbol of the rule we're matching with.
-    rule_head: Sym,
-    /// The alternative we need to try next.
-    alternative: usize,
+    /// The choice state of the resolver at this checkpoint.
+    choice: R::Choice,
     /// The number of unresolved goals at the time of the choice. Used for popping goals from the
     /// stack that were added by a matching rule.
     goals_checkpoint: usize,
@@ -90,7 +213,7 @@ pub enum Step {
     Done,
 }
 
-impl<'s> SolutionIter<'s> {
+impl<R: Resolver> SolutionIter<R> {
     /// Perform a single solver step.
     ///
     /// This method can be used as more fine-grained means for traversing the solution space as
@@ -104,7 +227,7 @@ impl<'s> SolutionIter<'s> {
     ///
     /// ```
     /// # use logru::ast::{self, Rule};
-    /// # use logru::solver::Step;
+    /// # use logru::solver::{RuleResolver, Step};
     /// # let mut syms = logru::SymbolStore::new();
     /// # let mut r = logru::CompiledRuleDb::new();
     /// # let s = syms.get_or_insert_named("s");
@@ -132,7 +255,8 @@ impl<'s> SolutionIter<'s> {
     /// let interrupted = Arc::new(AtomicBool::new(false));
     /// // Pass `interrupted` off to somewhere else where it can be set when the search is cancelled
     /// # interrupted.store(true, atomic::Ordering::SeqCst);
-    /// let mut solutions = logru::query_dfs(&r, &query);
+    /// let resolver = RuleResolver::new(&r);
+    /// let mut solutions = logru::query_dfs(resolver, &query);
     /// while ! interrupted.load(atomic::Ordering::SeqCst) {
     ///     match solutions.step() {
     ///         Step::Yield => println!("{:?}", solutions.get_solution()),
@@ -146,24 +270,28 @@ impl<'s> SolutionIter<'s> {
         // top-most one.
         if let Some(goal) = self.unresolved_goals.pop() {
             // resolve goal
-            let rule_head = match self.solution.terms.get_term(goal) {
-                // we currently don't support variable goals
-                term_arena::Term::Var(_) => unreachable!(),
-                term_arena::Term::App(functor, _) => functor,
+            let (goal_id, goal_term) = self.solution.follow_vars(goal);
+            let solution_checkpoint = self.solution.checkpoint();
+            let goals_checkpoint = self.unresolved_goals.len();
+            let mut context = ResolveContext {
+                solution: &mut self.solution,
+                goal_stack: &mut self.unresolved_goals,
+                checkpoint: &solution_checkpoint,
+                goal_len: goals_checkpoint,
             };
+            let choice = self.resolver.resolve(goal_id, goal_term, &mut context);
 
             self.checkpoints.push(Checkpoint {
                 goal,
-                rule_head,
-                alternative: 0,
-                solution_checkpoint: self.solution.checkpoint(),
-                goals_checkpoint: self.unresolved_goals.len(),
+                choice,
+                solution_checkpoint,
+                goals_checkpoint,
             });
         }
         // Then we backtrack to the topmost checkpoint (which, in case we just added one above,
         // means that we likely don't actually need to backtrack at all) that still has a matching
         // alternative left to try.
-        if self.backtrack_resume() {
+        if self.resume_or_backtrack() {
             // Found a choice to commit to
             if self.unresolved_goals.is_empty() {
                 // If no goals remain, we are done
@@ -212,26 +340,30 @@ impl<'s> SolutionIter<'s> {
             .checkpoints
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
-        let rules = self.rules.rules_by_head(checkpoint.rule_head);
-        while let Some(current) = rules.get(checkpoint.alternative) {
-            checkpoint.alternative += 1;
-            let result = self.solution.unify_rule(checkpoint.goal, current);
-            if let Some(goals) = result {
-                self.unresolved_goals.extend(goals);
-                return true;
-            } else {
-                drop(result);
-                self.solution.restore(&checkpoint.solution_checkpoint);
-            }
+
+        let mut context = ResolveContext {
+            solution: &mut self.solution,
+            goal_stack: &mut self.unresolved_goals,
+            checkpoint: &checkpoint.solution_checkpoint,
+            goal_len: checkpoint.goals_checkpoint,
+        };
+        let success = self
+            .resolver
+            .resume(&mut checkpoint.choice, checkpoint.goal, &mut context);
+
+        if success {
+            true
+        } else {
+            // checkpoint exhausted, reset state, put goal back and discard
+            context.reset();
+            let discarded = self.checkpoints.pop().expect("we know there is one here");
+            self.unresolved_goals.push(discarded.goal);
+            false
         }
-        // checkpoint exhausted, put goal back and discard
-        let discarded = self.checkpoints.pop().expect("we know there is one here");
-        self.unresolved_goals.push(discarded.goal);
-        false
     }
 
     /// Backtrack to the first checkpoint that allows making a choice
-    fn backtrack_resume(&mut self) -> bool {
+    fn resume_or_backtrack(&mut self) -> bool {
         while let Some(checkpoint) = self.checkpoints.last() {
             // restore to topmost checkpoint
             self.solution.restore(&checkpoint.solution_checkpoint);
@@ -247,7 +379,7 @@ impl<'s> SolutionIter<'s> {
     }
 }
 
-impl<'s> Iterator for SolutionIter<'s> {
+impl<R: Resolver> Iterator for SolutionIter<R> {
     type Item = Vec<Option<ast::Term>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -263,7 +395,7 @@ impl<'s> Iterator for SolutionIter<'s> {
 
 /// Auxilliary data structure holding a (partial) solution.
 #[derive(Debug)]
-struct SolutionState {
+pub struct SolutionState {
     /// The current map of goal variables to their values, if any.
     variables: Vec<Option<term_arena::TermId>>,
     /// A log of assignment operations. Everytime a variable is assigned, it is recorded here.
@@ -498,7 +630,7 @@ impl SolutionState {
 
 #[cfg(test)]
 mod tests {
-    use crate::solver::SolutionIter;
+    use crate::solver::{Resolver, SolutionIter};
     use crate::textual::TextualUniverse;
 
     /// https://github.com/fatho/logru/issues/15
@@ -516,7 +648,7 @@ mod tests {
         assert_no_solution(solver);
 
         #[track_caller]
-        fn assert_no_solution(mut solver: SolutionIter) {
+        fn assert_no_solution<R: Resolver + std::fmt::Debug>(mut solver: SolutionIter<R>) {
             loop {
                 match solver.step() {
                     super::Step::Yield => {

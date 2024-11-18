@@ -11,7 +11,7 @@ fn main() {
 
     let query = u.prepare_query("puzzle(Houses).").unwrap();
     for _ in 0..repeats {
-        let search = logru::query_dfs(u.rules(), &query);
+        let search = logru::query_dfs(u.resolver(), &query);
         let before = Instant::now();
         let solutions = search.collect::<Vec<_>>();
         let duration = before.elapsed();

@@ -11,7 +11,7 @@ pub use parser::{ParseError, ParseErrorKind};
 
 use crate::{
     ast::Query,
-    solver::{self, SolutionIter},
+    solver::{self, RuleResolver, SolutionIter},
     universe::{CompiledRuleDb, SymbolStore},
 };
 
@@ -63,7 +63,7 @@ pub use self::{parser::Parser, pretty::Prettifier};
 /// .unwrap();
 ///
 /// let query = u.prepare_query("mul(X,X,Y).").unwrap();
-/// let solutions = query_dfs(u.rules(), &query);
+/// let solutions = query_dfs(u.resolver(), &query);
 /// for solution in solutions.take(5) {
 ///     println!("SOLUTION:");
 ///     for (index, var) in solution.into_iter().enumerate() {
@@ -112,9 +112,9 @@ impl TextualUniverse {
     /// universe because parsing can discover new symbols that need to be added to the universe
     /// before running the query. Running a query by itself only requires a shared reference, and
     /// thus the pretty-printer is still accessible.
-    pub fn query_dfs(&mut self, query: &str) -> Result<SolutionIter, ParseError> {
+    pub fn query_dfs(&mut self, query: &str) -> Result<SolutionIter<RuleResolver>, ParseError> {
         let query = self.prepare_query(query)?;
-        Ok(solver::query_dfs(&self.rules, &query))
+        Ok(solver::query_dfs(RuleResolver::new(&self.rules), &query))
     }
 
     // //////////////////////////////// OTHER ACCESSORS ////////////////////////////////
@@ -132,6 +132,11 @@ impl TextualUniverse {
     /// Return the rules database of this universe.
     pub fn rules(&self) -> &CompiledRuleDb {
         &self.rules
+    }
+
+    /// Return a resolver for the internal rule database.
+    pub fn resolver(&self) -> RuleResolver {
+        RuleResolver::new(self.rules())
     }
 }
 

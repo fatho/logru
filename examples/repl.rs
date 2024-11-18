@@ -135,7 +135,7 @@ fn query(state: &mut AppState, args: &str) {
     state.interrupted.store(false, atomic::Ordering::SeqCst);
     match state.universe.prepare_query(args) {
         Ok(query) => {
-            let mut solutions = query_dfs(state.universe.rules(), &query);
+            let mut solutions = query_dfs(state.universe.resolver(), &query);
             loop {
                 if state.interrupted.load(atomic::Ordering::SeqCst) {
                     println!("Interrupted!");

@@ -11,7 +11,7 @@ pub use parser::{ParseError, ParseErrorKind};
 
 use crate::{
     ast::Query,
-    solver::{self, RuleResolver, SolutionIter},
+    search::{self, RuleResolver, SolutionIter},
     universe::{RuleSet, SymbolStore},
 };
 
@@ -114,7 +114,7 @@ impl TextualUniverse {
     /// thus the pretty-printer is still accessible.
     pub fn query_dfs(&mut self, query: &str) -> Result<SolutionIter<RuleResolver>, ParseError> {
         let query = self.prepare_query(query)?;
-        Ok(solver::query_dfs(RuleResolver::new(&self.rules), &query))
+        Ok(search::query_dfs(RuleResolver::new(&self.rules), &query))
     }
 
     // //////////////////////////////// OTHER ACCESSORS ////////////////////////////////

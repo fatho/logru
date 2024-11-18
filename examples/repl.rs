@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use logru::ast::Var;
-use logru::solver::query_dfs;
+use logru::search::query_dfs;
 use logru::textual::TextualUniverse;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
@@ -142,7 +142,7 @@ fn query(state: &mut AppState, args: &str) {
                     break;
                 }
                 match solutions.step() {
-                    logru::solver::Step::Yield => {
+                    logru::search::Step::Yield => {
                         let solution = solutions.get_solution();
                         println!("Found solution:");
                         for (index, var) in solution.into_iter().enumerate() {
@@ -168,8 +168,8 @@ fn query(state: &mut AppState, args: &str) {
                             }
                         }
                     }
-                    logru::solver::Step::Continue => continue,
-                    logru::solver::Step::Done => {
+                    logru::search::Step::Continue => continue,
+                    logru::search::Step::Done => {
                         println!("No more solutions.");
                         break;
                     }

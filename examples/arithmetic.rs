@@ -1,4 +1,4 @@
-use logru::{solver::query_dfs, textual::TextualUniverse};
+use logru::{search::query_dfs, textual::TextualUniverse};
 
 fn main() {
     let mut u = TextualUniverse::new();

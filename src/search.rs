@@ -1,8 +1,9 @@
-//! # A DFS solver for queries
+//! # A DFS search through the solution space of a query.
 //!
-//! This module contains the bits and pieces necessary for proving queries using the facts and rules
-//! stores in a [crate::RuleSet].
-//! For now, Logru only supports a single solving strategy, [query_dfs].
+//! This module contains the bits and pieces necessary for solving queries by searching through the
+//! solution space that is expanded using the given [`Resolver`].
+//!
+//!  For now, Logru only supports a single solving strategy, [query_dfs].
 
 #[cfg(test)]
 mod test;
@@ -227,7 +228,7 @@ impl<R: Resolver> SolutionIter<R> {
     ///
     /// ```
     /// # use logru::ast::{self, Rule};
-    /// # use logru::solver::{RuleResolver, Step};
+    /// # use logru::search::{RuleResolver, Step};
     /// # let mut syms = logru::SymbolStore::new();
     /// # let mut r = logru::RuleSet::new();
     /// # let s = syms.get_or_insert_named("s");
@@ -630,7 +631,7 @@ impl SolutionState {
 
 #[cfg(test)]
 mod tests {
-    use crate::solver::{Resolver, SolutionIter};
+    use crate::search::{Resolver, SolutionIter};
     use crate::textual::TextualUniverse;
 
     /// https://github.com/fatho/logru/issues/15

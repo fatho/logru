@@ -14,8 +14,13 @@ implementation.
 
 Compared to Prolog, it currently lacks some features though. Most notable, there are
 - no negation or cut,
-- no built-in types (like integers), and
-- no predicates with side effects (like doing IO).
+- no special built-in types (like integers)
+
+Features that are implemented:
+- Standard (compound) terms
+- Named variables & wildcards
+- DFS-based inference
+- Custom predicate resolvers (e.g. with side effects)
 
 ## Showcase
 
@@ -214,10 +219,7 @@ are:
   steps taken, number of instantiated rules, peak memory usage).
 - Making things even faster by e.g. optimising the occurs check.
 - Auto-completion in the REPL.
-- Impure predicates (i.e. those having an implementation in Rust and can manipulate the solver state
-  directly).
-- Cut and negation (which can probably be implemented given the previous point).
-
+- Cut and negation (which may be possible as a custom resolver).
 
 ## License
 

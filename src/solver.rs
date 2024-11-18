@@ -1,7 +1,7 @@
 //! # A DFS solver for queries
 //!
 //! This module contains the bits and pieces necessary for proving queries using the facts and rules
-//! stores in a [crate::CompiledRuleDb].
+//! stores in a [crate::RuleSet].
 //! For now, Logru only supports a single solving strategy, [query_dfs].
 
 #[cfg(test)]
@@ -10,7 +10,7 @@ mod test;
 use crate::{
     ast::{self, Query, Var},
     term_arena::{self, TermArena},
-    universe::{CompiledRule, CompiledRuleDb},
+    universe::{CompiledRule, RuleSet},
 };
 
 /// Solve queries against the universe using a depth-first-search.
@@ -44,11 +44,11 @@ pub fn query_dfs<R: Resolver>(resolver: R, query: &Query) -> SolutionIter<R> {
 
 #[derive(Debug)]
 pub struct RuleResolver<'a> {
-    rules: &'a CompiledRuleDb,
+    rules: &'a RuleSet,
 }
 
 impl<'a> RuleResolver<'a> {
-    pub fn new(rules: &'a CompiledRuleDb) -> Self {
+    pub fn new(rules: &'a RuleSet) -> Self {
         Self { rules }
     }
 }
@@ -229,7 +229,7 @@ impl<R: Resolver> SolutionIter<R> {
     /// # use logru::ast::{self, Rule};
     /// # use logru::solver::{RuleResolver, Step};
     /// # let mut syms = logru::SymbolStore::new();
-    /// # let mut r = logru::CompiledRuleDb::new();
+    /// # let mut r = logru::RuleSet::new();
     /// # let s = syms.get_or_insert_named("s");
     /// # let z = syms.get_or_insert_named("z");
     /// # let is_natural = syms.get_or_insert_named("is_natural");

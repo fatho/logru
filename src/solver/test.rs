@@ -19,7 +19,7 @@ fn genealogy() {
     */
 
     let mut s = SymbolStore::new();
-    let mut r = CompiledRuleDb::new();
+    let mut r = RuleSet::new();
 
     let alice = s.get_or_insert_named("alice");
     let bob = s.get_or_insert_named("bob");
@@ -107,7 +107,7 @@ fn arithmetic() {
     */
 
     let mut u = SymbolStore::new();
-    let mut r = CompiledRuleDb::new();
+    let mut r = RuleSet::new();
 
     let s = u.get_or_insert_named("s");
     let z = u.get_or_insert_named("z");

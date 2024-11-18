@@ -73,13 +73,13 @@ those IDs.
 
 ### Core API
 
-At the core of the solver are the `logru::SymbolStore` and `logru::CompiledRuleDb` types, which
+At the core of the solver are the `logru::SymbolStore` and `logru::RuleSet` types, which
 hold all known facts and rules. A few simple rules for [Peano
 arithmetic](https://en.wikipedia.org/wiki/Peano_axioms#Addition) can be defined like this:
 
 ```rust
 let mut syms = logru::SymbolStore::new();
-let mut r = logru::CompiledRuleDb::new();
+let mut r = logru::RuleSet::new();
 
 // Obtain IDs for t he symbols we want to use in our terms.
 // The order of these calls doesn't matter.

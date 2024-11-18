@@ -12,14 +12,14 @@ pub use parser::{ParseError, ParseErrorKind};
 use crate::{
     ast::Query,
     solver::{self, RuleResolver, SolutionIter},
-    universe::{CompiledRuleDb, SymbolStore},
+    universe::{RuleSet, SymbolStore},
 };
 
 pub use self::{parser::Parser, pretty::Prettifier};
 
 /// A universe that can be interacted with using a Prolog like syntax.
 ///
-/// It builds on the [`SymbolStore`] and [`CompiledRuleDb`] abstractions and additionally provides a
+/// It builds on the [`SymbolStore`] and [`RuleSet`] abstractions and additionally provides a
 /// fully textual syntax for defining rules and queries, looking very similar to Prolog.
 ///
 /// Syntactic elements:
@@ -78,14 +78,14 @@ pub use self::{parser::Parser, pretty::Prettifier};
 ///
 pub struct TextualUniverse {
     symbols: SymbolStore,
-    rules: CompiledRuleDb,
+    rules: RuleSet,
 }
 
 impl TextualUniverse {
     pub fn new() -> Self {
         Self {
             symbols: SymbolStore::new(),
-            rules: CompiledRuleDb::new(),
+            rules: RuleSet::new(),
         }
     }
 
@@ -130,7 +130,7 @@ impl TextualUniverse {
     }
 
     /// Return the rules database of this universe.
-    pub fn rules(&self) -> &CompiledRuleDb {
+    pub fn rules(&self) -> &RuleSet {
         &self.rules
     }
 

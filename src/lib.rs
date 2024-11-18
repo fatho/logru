@@ -2,7 +2,7 @@
 //!
 //! Logru is an embeddable and fast solver for a subset of Prolog. At the core lies the solver in
 //! the form of [`query_dfs`] which performs a depth-first search to prove the goals in a query. It
-//! does so by consulting the known facts and rules stored in a [CompiledRuleDb].
+//! does so by consulting the known facts and rules stored in a [RuleSet].
 //!
 //! Internally, all identifiers are represented using IDs. These are managed via [`SymbolStore`],
 //! which optionally provides a mapping between IDs and friendly names. There is no textual
@@ -31,13 +31,13 @@
 //! while the second case expresses that `P + s(Q) = s(R)` where `P + Q = R` (i.e. we add one on
 //! both sides).
 //!
-//! Using the [SymbolStore] and [CompiledRuleDb] types, we can encode these rules as follows:
+//! Using the [SymbolStore] and [RuleSet] types, we can encode these rules as follows:
 //!
 //! ```
 //! use logru::ast::{self, Rule};
 //!
 //! let mut syms = logru::SymbolStore::new();
-//! let mut r = logru::CompiledRuleDb::new();
+//! let mut r = logru::RuleSet::new();
 //!
 //! // Obtain IDs for t he symbols we want to use in our terms.
 //! // The order of these calls doesn't matter.
@@ -84,7 +84,7 @@
 //! # use logru::ast::{self, Rule};
 //! # use logru::solver::RuleResolver;
 //! # let mut syms = logru::SymbolStore::new();
-//! # let mut r = logru::CompiledRuleDb::new();
+//! # let mut r = logru::RuleSet::new();
 //! # let s = syms.get_or_insert_named("s");
 //! # let z = syms.get_or_insert_named("z");
 //! # let is_natural = syms.get_or_insert_named("is_natural");
@@ -151,4 +151,4 @@ pub mod textual;
 pub mod universe;
 
 pub use solver::query_dfs;
-pub use universe::{CompiledRuleDb, SymbolStore};
+pub use universe::{RuleSet, SymbolStore};

@@ -176,12 +176,12 @@ impl CompiledRule {
 
 /// Auxilliary data structure for efficiently looking up [CompiledRule]s based on their head symbol.
 #[derive(Debug)]
-pub struct CompiledRuleDb {
+pub struct RuleSet {
     /// The set of rules indexed by the symbol ID of the head predicate.
     rules_by_head: Vec<Vec<CompiledRule>>,
 }
 
-impl CompiledRuleDb {
+impl RuleSet {
     /// Create a new empty rule database.
     pub fn new() -> Self {
         Self {
@@ -221,7 +221,7 @@ impl CompiledRuleDb {
     }
 }
 
-impl Default for CompiledRuleDb {
+impl Default for RuleSet {
     fn default() -> Self {
         Self::new()
     }

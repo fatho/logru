@@ -1,11 +1,16 @@
+use std::collections::HashMap;
+use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Instant;
 
-use logru::ast::Var;
-use logru::search::query_dfs;
-use logru::textual::TextualUniverse;
+use logru::ast::{Sym, Var, VarScope};
+use logru::resolve::ResolverExt;
+use logru::search::{query_dfs, Resolved, Resolver};
+use logru::term_arena::ArgRange;
+use logru::textual::{Prettifier, TextualUniverse};
+use logru::SymbolStore;
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
@@ -95,13 +100,17 @@ fn main() {
 
 struct AppState {
     universe: TextualUniverse,
+    commands: ReplCommands,
     interrupted: Arc<AtomicBool>,
 }
 
 impl AppState {
     pub fn new(interrupted: Arc<AtomicBool>) -> Self {
+        let mut universe = TextualUniverse::new();
+        let commands = ReplCommands::new(&mut universe.symbols);
         Self {
-            universe: TextualUniverse::new(),
+            universe,
+            commands,
             interrupted,
         }
     }
@@ -135,7 +144,11 @@ fn query(state: &mut AppState, args: &str) {
     state.interrupted.store(false, atomic::Ordering::SeqCst);
     match state.universe.prepare_query(args) {
         Ok(query) => {
-            let mut solutions = query_dfs(state.universe.resolver(), &query);
+            let builtins = state
+                .commands
+                .as_resolver(&state.universe.symbols, query.scope.as_ref());
+            let resolver = builtins.or_else(state.universe.resolver());
+            let mut solutions = query_dfs(resolver, &query);
             loop {
                 if state.interrupted.load(atomic::Ordering::SeqCst) {
                     println!("Interrupted!");
@@ -300,5 +313,92 @@ fn get_history_path() -> Option<PathBuf> {
     } else {
         tracing::error!("Could not determine config folder, history will not be persisted");
         None
+    }
+}
+
+/// Mapping from symbols to built-in REPL commands.
+struct ReplCommands {
+    goals: HashMap<Sym, ReplCmd>,
+}
+
+impl ReplCommands {
+    pub fn new(syms: &mut SymbolStore) -> Self {
+        let commands = [("debug", ReplCmd::Debug)];
+        Self {
+            goals: HashMap::from_iter(
+                commands.map(|(str, cmd)| (syms.get_or_insert_named(str), cmd)),
+            ),
+        }
+    }
+
+    pub fn as_resolver<'s>(
+        &'s self,
+        symbols: &'s SymbolStore,
+        query_scope: Option<&'s VarScope>,
+    ) -> ReplResolver<'s> {
+        ReplResolver {
+            goals: &self.goals,
+            symbols,
+            query_scope,
+        }
+    }
+}
+
+/// Resolver providing special REPL commands.
+struct ReplResolver<'s> {
+    goals: &'s HashMap<Sym, ReplCmd>,
+    symbols: &'s SymbolStore,
+    query_scope: Option<&'s VarScope>,
+}
+
+impl<'s> ReplResolver<'s> {
+    fn debug(&self, args: ArgRange, context: &mut logru::search::ResolveContext) -> Resolved<()> {
+        let arg_str = args
+            .map(|arg| {
+                let term_id = context.solution().terms().get_arg(arg);
+                let term = context.solution().extract_term(term_id);
+                Prettifier::new(self.symbols).term_to_string(&term, self.query_scope)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        tracing::info!("debug({arg_str})");
+        Resolved::Success
+    }
+}
+
+/// Built-in REPL commands.
+#[derive(Debug)]
+enum ReplCmd {
+    /// Debug-prints the argument to the console.
+    Debug,
+}
+
+impl<'s> Resolver for ReplResolver<'s> {
+    // For now, all built-in commands are single-shot.
+    type Choice = ();
+
+    fn resolve(
+        &mut self,
+        _goal_id: logru::term_arena::TermId,
+        goal_term: logru::term_arena::Term,
+        context: &mut logru::search::ResolveContext,
+    ) -> logru::search::Resolved<Self::Choice> {
+        if let logru::term_arena::Term::App(sym, args) = goal_term {
+            if let Some(goal) = self.goals.get(&sym) {
+                match goal {
+                    ReplCmd::Debug => return self.debug(args, context),
+                }
+            }
+        }
+        Resolved::Fail
+    }
+
+    fn resume(
+        &mut self,
+        _choice: &mut Self::Choice,
+        _goal_id: logru::term_arena::TermId,
+        _context: &mut logru::search::ResolveContext,
+    ) -> bool {
+        false
     }
 }

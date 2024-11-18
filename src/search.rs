@@ -509,11 +509,11 @@ impl SolutionState {
     }
 
     /// Convert a term from the internal arena to the AST representation.
-    fn get_solution_term(&self, term: term_arena::TermId) -> ast::Term {
+    pub fn extract_term(&self, term: term_arena::TermId) -> ast::Term {
         match self.terms.get_term(term) {
             term_arena::Term::Var(v) => {
                 if let Some(value) = &self.variables[v.ord()] {
-                    self.get_solution_term(*value)
+                    self.extract_term(*value)
                 } else {
                     ast::Term::Var(v)
                 }
@@ -521,7 +521,7 @@ impl SolutionState {
             term_arena::Term::App(functor, args) => ast::Term::App(ast::AppTerm {
                 functor,
                 args: args
-                    .map(|arg_id| self.get_solution_term(self.terms.get_arg(arg_id)))
+                    .map(|arg_id| self.extract_term(self.terms.get_arg(arg_id)))
                     .collect(),
             }),
         }
@@ -532,7 +532,7 @@ impl SolutionState {
         self.variables
             .iter()
             .take(self.goal_vars)
-            .map(|val| val.as_ref().map(|t| self.get_solution_term(*t)))
+            .map(|val| val.as_ref().map(|t| self.extract_term(*t)))
             .collect()
     }
 

@@ -78,8 +78,8 @@ pub use self::{parser::Parser, pretty::Prettifier};
 /// ```
 ///
 pub struct TextualUniverse {
-    symbols: SymbolStore,
-    rules: RuleSet,
+    pub symbols: SymbolStore,
+    pub rules: RuleSet,
 }
 
 impl TextualUniverse {
@@ -130,14 +130,9 @@ impl TextualUniverse {
         Parser::new(&mut self.symbols)
     }
 
-    /// Return the rules database of this universe.
-    pub fn rules(&self) -> &RuleSet {
-        &self.rules
-    }
-
     /// Return a resolver for the internal rule database.
     pub fn resolver(&self) -> RuleResolver {
-        RuleResolver::new(self.rules())
+        RuleResolver::new(&self.rules)
     }
 }
 

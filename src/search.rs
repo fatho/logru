@@ -477,6 +477,8 @@ impl SolutionState {
                     self.occurs_stack
                         .extend(args.map(|arg_id| terms.get_arg(arg_id)))
                 }
+                // Primitive values cannot contain variables
+                term_arena::Term::Int(_) => {}
             }
             match self.occurs_stack.pop() {
                 // More terms to check
@@ -524,6 +526,7 @@ impl SolutionState {
                     .map(|arg_id| self.extract_term(self.terms.get_arg(arg_id)))
                     .collect(),
             }),
+            term_arena::Term::Int(i) => ast::Term::Int(i),
         }
     }
 
@@ -552,7 +555,7 @@ impl SolutionState {
                         return (term, term_arena::Term::Var(var));
                     }
                 }
-                app @ term_arena::Term::App(_, _) => return (term, app),
+                other => return (term, other),
             }
         }
     }
@@ -583,13 +586,9 @@ impl SolutionState {
                     true
                 }
             }
-            // variable with application term
-            (term_arena::Term::Var(goal_var), term_arena::Term::App(_, _)) => {
-                self.set_var(goal_var, rule_term_id)
-            }
-            (term_arena::Term::App(_, _), term_arena::Term::Var(rule_var)) => {
-                self.set_var(rule_var, goal_term_id)
-            }
+            // variable with any other term
+            (term_arena::Term::Var(goal_var), _) => self.set_var(goal_var, rule_term_id),
+            (_, term_arena::Term::Var(rule_var)) => self.set_var(rule_var, goal_term_id),
             // two application terms
             (
                 term_arena::Term::App(goal_func, goal_args),
@@ -608,6 +607,12 @@ impl SolutionState {
                     self.unify(self.terms.get_arg(goal_arg), self.terms.get_arg(rule_arg))
                 })
             }
+            // two integers
+            (term_arena::Term::Int(goal_int), term_arena::Term::Int(rule_int)) => {
+                goal_int == rule_int
+            }
+            // incomptaible types
+            (_, _) => false,
         }
     }
 

@@ -76,6 +76,8 @@ pub enum Term {
     Var(Var),
     /// An application term, see [`AppTerm`].
     App(AppTerm),
+    /// A signed 64-bit integer
+    Int(i64),
 }
 
 impl Term {
@@ -88,6 +90,7 @@ impl Term {
         match self {
             Term::Var(v) => v.0 + 1,
             Term::App(app) => app.count_var_slots(),
+            Term::Int(_) => 0,
         }
     }
 }

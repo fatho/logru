@@ -1,4 +1,4 @@
-use logos::Logos;
+use logos::{Lexer, Logos};
 
 #[derive(Logos, Debug, PartialEq, Clone)]
 pub enum Token {
@@ -27,8 +27,15 @@ pub enum Token {
     #[regex("_[a-zA-Z_0-9]*")]
     Wildcard,
 
+    #[regex("[+-]?[0-9]+", parse_int)]
+    Int(i64),
+
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
     #[regex(r"[ \t\n\f]+", logos::skip)]
     Whitespace,
+}
+
+fn parse_int(lex: &mut Lexer<Token>) -> Option<i64> {
+    lex.slice().parse().ok()
 }

@@ -233,6 +233,10 @@ impl<'a> Parser<'a> {
                 tokens.advance();
                 Ok(Term::Var(scope.insert_wildcard()))
             }
+            Some(Ok(Token::Int(i))) => {
+                tokens.advance();
+                Ok(Term::Int(i))
+            }
             _ => self.parse_appterm(tokens, scope).map(Term::App),
         }
     }

@@ -3,6 +3,7 @@ use crate::term_arena;
 
 /// Extension methods for resolvers that aid in building them.
 pub trait ResolverExt: Resolver {
+    /// First try the current resolver, and if that fails, use the other one.
     fn or_else<R: Resolver>(self, other: R) -> OrElse<Self, R>
     where
         Self: Sized,

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use logru::ast::{Sym, Var, VarScope};
-use logru::resolve::ResolverExt;
+use logru::resolve::{ArithmeticResolver, ResolverExt};
 use logru::search::{query_dfs, Resolved, Resolver};
 use logru::term_arena::ArgRange;
 use logru::textual::{Prettifier, TextualUniverse};
@@ -101,6 +101,7 @@ fn main() {
 struct AppState {
     universe: TextualUniverse,
     commands: ReplCommands,
+    arithmetic: ArithmeticResolver,
     interrupted: Arc<AtomicBool>,
 }
 
@@ -108,10 +109,12 @@ impl AppState {
     pub fn new(interrupted: Arc<AtomicBool>) -> Self {
         let mut universe = TextualUniverse::new();
         let commands = ReplCommands::new(&mut universe.symbols);
+        let arithmetic = ArithmeticResolver::new(&mut universe.symbols);
         Self {
             universe,
             commands,
             interrupted,
+            arithmetic,
         }
     }
 }
@@ -147,7 +150,9 @@ fn query(state: &mut AppState, args: &str) {
             let builtins = state
                 .commands
                 .as_resolver(&state.universe.symbols, query.scope.as_ref());
-            let resolver = builtins.or_else(state.universe.resolver());
+            let resolver = builtins
+                .or_else(&mut state.arithmetic)
+                .or_else(state.universe.resolver());
             let mut solutions = query_dfs(resolver, &query);
             loop {
                 if state.interrupted.load(atomic::Ordering::SeqCst) {

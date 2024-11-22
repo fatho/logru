@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::mem::MaybeUninit;
 
 use crate::ast::Sym;
 use crate::search::{Resolved, Resolver, SolutionState};
-use crate::term_arena::{ArgRange, Term, TermArena, TermId};
+use crate::term_arena::{ArgRange, Term, TermId};
 use crate::SymbolStore;
 
 /// A special resolver for integer arithmetic. It provides a special predicate `is/2` which
@@ -70,7 +69,7 @@ impl ArithmeticResolver {
             Term::Var(_) => None,
             Term::App(sym, arg_range) => {
                 let op = self.exp_map.get(&sym)?;
-                let [a1, a2] = fixed_args(solution.terms(), arg_range)?;
+                let [a1, a2] = solution.terms().get_args_fixed(arg_range)?;
                 let v1 = self.eval_exp(solution, a1)?;
                 let v2 = self.eval_exp(solution, a2)?;
                 // TODO: log overflow errors
@@ -93,7 +92,7 @@ impl ArithmeticResolver {
         args: ArgRange,
         context: &mut crate::search::ResolveContext,
     ) -> Option<Resolved<()>> {
-        let [left, right] = fixed_args(context.solution().terms(), args)?;
+        let [left, right] = context.solution().terms().get_args_fixed(args)?;
         // Right must be fully instantiated and evaluate to integer formula
         let right_val = self.eval_exp(context.solution(), right)?;
 
@@ -151,19 +150,5 @@ impl Resolver for ArithmeticResolver {
         _context: &mut crate::search::ResolveContext,
     ) -> bool {
         false
-    }
-}
-
-fn fixed_args<const N: usize>(arena: &TermArena, mut args: ArgRange) -> Option<[TermId; N]> {
-    let mut res = [MaybeUninit::uninit(); N];
-    for arg_term in res.iter_mut() {
-        let arg = args.next()?;
-        *arg_term = MaybeUninit::new(arena.get_arg(arg))
-    }
-    if args.is_empty() {
-        // SAFETY: If we reach this point, all elements were initialized above.
-        unsafe { Some(res.map(|u| u.assume_init())) }
-    } else {
-        None
     }
 }

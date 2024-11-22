@@ -34,7 +34,7 @@ pub struct ArgId(usize);
 ///
 /// # Notes
 ///
-/// There are no safeguards against using `TermId`s from one arena with another arena. But since the
+/// There are no safeguards against using [`TermId`]s from one arena with another arena. But since the
 /// implementation only uses safe Rust, nothing *really* bad[^reallybad] will happen in that case.
 /// Still, things might panic or just silently compute the wrong result.
 ///
@@ -64,7 +64,7 @@ pub struct ArgId(usize);
 ///     Term::App(sym, args) => {
 ///         assert_eq!(sym, foo);
 ///         assert_eq!(
-///             args.map(|id| arena.get_arg(id)).collect::<Vec<_>>(),
+///             arena.get_args(args).collect::<Vec<_>>(),
 ///             vec![t_bar, t_baz, t_v1]
 ///         );
 ///     }
@@ -73,7 +73,7 @@ pub struct ArgId(usize);
 /// ```
 #[derive(Debug, Clone)]
 pub struct TermArena {
-    /// Terms that have been allocated in this arena. The `TermId`s are used as index into this
+    /// Terms that have been allocated in this arena. The [`TermId`]s are used as index into this
     /// vector.
     terms: Vec<Term>,
     /// Argument pointers for application terms. Each application term refers to a range inside this
@@ -128,8 +128,8 @@ impl TermArena {
     ///
     /// # Returns
     ///
-    /// This function returns a closure that can be used for translating `TermId`s that were created
-    /// from the blueprint into `TermId`s that can be used with this arena.
+    /// This function returns a closure that can be used for translating [`TermId`]s that were created
+    /// from the blueprint into [`TermId`]s that can be used with this arena.
     ///
     /// # Example
     ///
@@ -218,14 +218,36 @@ impl TermArena {
         out
     }
 
-    /// Dereference an argument handle into the corresponding `TermId` representing that argument.
-    #[inline]
+    /// Dereference an argument handle into the corresponding [`TermId`] representing that argument.
+    #[inline(always)]
     pub fn get_arg(&self, arg_id: ArgId) -> TermId {
         self.args[arg_id.0]
     }
 
+    /// Dereference a range of arguments into the corresponding [`TermId`]s representing these
+    /// arguments.
+    #[inline(always)]
+    pub fn get_args(&self, arg_range: ArgRange) -> impl Iterator<Item = TermId> + '_ {
+        self.args[arg_range.start..arg_range.end].iter().copied()
+    }
+
+    /// Dereference a range of arguments into the corresponding [`TermId`]s, like
+    /// [`TermArena::get_args`], but only return a successful reesult if there are exactly `N`
+    /// arguments.
+    #[inline(always)]
+    pub fn get_args_fixed<const N: usize>(&self, args: ArgRange) -> Option<[TermId; N]> {
+        if args.len() == N {
+            let mut terms = self.get_args(args);
+            let arr = std::array::from_fn(|_| terms.next().unwrap());
+            debug_assert!(terms.next().is_none(), "bug: we checked the length above");
+            Some(arr)
+        } else {
+            None
+        }
+    }
+
     /// Dereference a term handle into the actual term.
-    #[inline]
+    #[inline(always)]
     pub fn get_term(&self, term_id: TermId) -> Term {
         self.terms[term_id.0]
     }

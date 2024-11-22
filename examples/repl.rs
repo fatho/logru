@@ -359,9 +359,9 @@ impl<'s> ReplResolver<'s> {
         args: ArgRange,
         context: &mut logru::search::ResolveContext,
     ) -> Option<Resolved<()>> {
-        let arg_str = args
-            .map(|arg| {
-                let term_id = context.solution().terms().get_arg(arg);
+        let arg_terms = context.solution().terms().get_args(args);
+        let arg_str = arg_terms
+            .map(|term_id| {
                 let term = context.solution().extract_term(term_id);
                 Prettifier::new(self.symbols).term_to_string(&term, self.query_scope)
             })

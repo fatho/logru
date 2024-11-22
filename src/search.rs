@@ -481,8 +481,7 @@ impl SolutionState {
                 }
                 term_arena::Term::App(_, args) => {
                     let terms = &self.terms;
-                    self.occurs_stack
-                        .extend(args.map(|arg_id| terms.get_arg(arg_id)))
+                    self.occurs_stack.extend(terms.get_args(args))
                 }
                 // Primitive values cannot contain variables
                 term_arena::Term::Int(_) => {}
@@ -529,8 +528,10 @@ impl SolutionState {
             }
             term_arena::Term::App(functor, args) => ast::Term::App(ast::AppTerm {
                 functor,
-                args: args
-                    .map(|arg_id| self.extract_term(self.terms.get_arg(arg_id)))
+                args: self
+                    .terms
+                    .get_args(args)
+                    .map(|arg| self.extract_term(arg))
                     .collect(),
             }),
             term_arena::Term::Int(i) => ast::Term::Int(i),

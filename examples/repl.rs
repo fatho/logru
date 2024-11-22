@@ -7,7 +7,7 @@ use std::time::Instant;
 use logru::ast::{Sym, Var, VarScope};
 use logru::resolve::{ArithmeticResolver, ResolverExt};
 use logru::search::{query_dfs, Resolved, Resolver};
-use logru::term_arena::ArgRange;
+use logru::term_arena::{AppTerm, ArgRange};
 use logru::textual::{Prettifier, TextualUniverse};
 use logru::SymbolStore;
 use rustyline::completion::Completer;
@@ -389,7 +389,7 @@ impl<'s> Resolver for ReplResolver<'s> {
         goal_term: logru::term_arena::Term,
         context: &mut logru::search::ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
-        let (sym, args) = goal_term.as_app()?;
+        let AppTerm(sym, args) = goal_term.as_app()?;
         let goal = self.goals.get(&sym)?;
         match goal {
             ReplCmd::Debug => self.debug(args, context),

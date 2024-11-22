@@ -1,4 +1,5 @@
 use crate::search::{ResolveContext, Resolved, Resolver, SolutionState};
+use crate::term_arena::AppTerm;
 use crate::universe::CompiledRule;
 use crate::{term_arena, RuleSet};
 
@@ -75,7 +76,7 @@ impl<'a> Resolver for RuleResolver<'a> {
         goal_term: term_arena::Term,
         context: &mut ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
-        let (sym, _) = goal_term.as_app()?;
+        let AppTerm(sym, _) = goal_term.as_app()?;
         let rules = self.rules.rules_by_head(sym);
         let rest = self.apply_first_rule(rules, goal_id, context)?;
         if rest.is_empty() {

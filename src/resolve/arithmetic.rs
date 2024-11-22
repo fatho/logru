@@ -3,7 +3,7 @@ use std::convert::TryInto;
 
 use crate::ast::Sym;
 use crate::search::{Resolved, Resolver, SolutionState};
-use crate::term_arena::{ArgRange, Term, TermId};
+use crate::term_arena::{AppTerm, ArgRange, Term, TermId};
 use crate::SymbolStore;
 
 /// A special resolver for integer arithmetic. It provides a special predicate `is/2` which
@@ -67,7 +67,7 @@ impl ArithmeticResolver {
         match solution.follow_vars(exp).1 {
             // TODO: log: an unbound variable is an error
             Term::Var(_) => None,
-            Term::App(sym, arg_range) => {
+            Term::App(AppTerm(sym, arg_range)) => {
                 let op = self.exp_map.get(&sym)?;
                 let [a1, a2] = solution.terms().get_args_fixed(arg_range)?;
                 let v1 = self.eval_exp(solution, a1)?;
@@ -108,7 +108,7 @@ impl ArithmeticResolver {
                     .then_some(Resolved::Success)
             }
             Term::Int(left_val) => (left_val == right_val).then_some(Resolved::Success),
-            Term::App(_, _) => None,
+            Term::App(_) => None,
         }
     }
 }
@@ -136,7 +136,7 @@ impl Resolver for ArithmeticResolver {
         goal_term: crate::term_arena::Term,
         context: &mut crate::search::ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
-        let (sym, args) = goal_term.as_app()?;
+        let AppTerm(sym, args) = goal_term.as_app()?;
         let pred = self.pred_map.get(&sym)?;
         match pred {
             Pred::Is => self.resolve_is(args, context),

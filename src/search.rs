@@ -479,7 +479,7 @@ impl SolutionState {
                         continue;
                     }
                 }
-                term_arena::Term::App(_, args) => {
+                term_arena::Term::App(term_arena::AppTerm(_, args)) => {
                     let terms = &self.terms;
                     self.occurs_stack.extend(terms.get_args(args))
                 }
@@ -526,14 +526,16 @@ impl SolutionState {
                     ast::Term::Var(v)
                 }
             }
-            term_arena::Term::App(functor, args) => ast::Term::App(ast::AppTerm {
-                functor,
-                args: self
-                    .terms
-                    .get_args(args)
-                    .map(|arg| self.extract_term(arg))
-                    .collect(),
-            }),
+            term_arena::Term::App(term_arena::AppTerm(functor, args)) => {
+                ast::Term::App(ast::AppTerm {
+                    functor,
+                    args: self
+                        .terms
+                        .get_args(args)
+                        .map(|arg| self.extract_term(arg))
+                        .collect(),
+                })
+            }
             term_arena::Term::Int(i) => ast::Term::Int(i),
         }
     }
@@ -599,8 +601,8 @@ impl SolutionState {
             (_, term_arena::Term::Var(rule_var)) => self.set_var(rule_var, goal_term_id),
             // two application terms
             (
-                term_arena::Term::App(goal_func, goal_args),
-                term_arena::Term::App(rule_func, rule_args),
+                term_arena::Term::App(term_arena::AppTerm(goal_func, goal_args)),
+                term_arena::Term::App(term_arena::AppTerm(rule_func, rule_args)),
             ) => {
                 // the terms must have the same functor symbol and the same arity
                 if goal_func != rule_func {

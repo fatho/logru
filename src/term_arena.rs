@@ -61,7 +61,7 @@ pub struct ArgId(usize);
 /// let t_foo = arena.app(foo, &[t_bar, t_baz, t_v1]);
 /// // Sanity check
 /// match arena.get_term(t_foo) {
-///     Term::App(sym, args) => {
+///     Term::App(AppTerm(sym, args)) => {
 ///         assert_eq!(sym, foo);
 ///         assert_eq!(
 ///             arena.get_args(args).collect::<Vec<_>>(),
@@ -104,13 +104,13 @@ impl TermArena {
         let arg_start = self.args.len();
         let arg_end = arg_start + args.len();
         self.args.extend_from_slice(args);
-        self.terms.push(Term::App(
+        self.terms.push(Term::App(AppTerm(
             functor,
             ArgRange {
                 start: arg_start,
                 end: arg_end,
             },
-        ));
+        )));
         term
     }
 
@@ -170,13 +170,13 @@ impl TermArena {
         self.terms
             .extend(blueprint.terms.iter().map(|term| match term {
                 Term::Var(var) => Term::Var(var.offset(var_offset)),
-                Term::App(func, args) => Term::App(
+                Term::App(AppTerm(func, args)) => Term::App(AppTerm(
                     *func,
                     ArgRange {
                         start: args.start + here.args,
                         end: args.end + here.args,
                     },
-                ),
+                )),
                 Term::Int(i) => Term::Int(*i),
             }));
         self.args.extend(
@@ -354,7 +354,7 @@ pub enum Term {
     Var(Var),
     /// An application term of the form `foo(arg1, arg2, arg3, ...)`.
     /// The argument range can be used to get the corresponding argument terms from the arena.
-    App(Sym, ArgRange),
+    App(AppTerm),
     /// A signed 64-bit integer
     Int(i64),
 }
@@ -369,10 +369,15 @@ impl Term {
     }
 
     /// If this term is [`Term::App`] return the symbol and arguments.
-    pub fn as_app(self) -> Option<(Sym, ArgRange)> {
+    pub fn as_app(self) -> Option<AppTerm> {
         match self {
-            Term::App(sym, args) => Some((sym, args)),
+            Term::App(app) => Some(app),
             _ => None,
         }
     }
 }
+
+/// An application term of the form `foo(arg1, arg2, arg3, ...)` that is part of a [`TermArena`].
+/// The argument range can be used to get the corresponding argument terms from the arena.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppTerm(pub Sym, pub ArgRange);

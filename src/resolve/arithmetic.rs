@@ -58,12 +58,8 @@ impl ArithmeticResolver {
         ];
         let preds = [("is", Pred::Is)];
         Self {
-            exp_map: IntoIterator::into_iter(exps)
-                .map(|(name, op)| (symbols.get_or_insert_named(name), op))
-                .collect(),
-            pred_map: IntoIterator::into_iter(preds)
-                .map(|(name, op)| (symbols.get_or_insert_named(name), op))
-                .collect(),
+            exp_map: symbols.build_sym_map(exps),
+            pred_map: symbols.build_sym_map(preds),
         }
     }
 

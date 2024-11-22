@@ -70,6 +70,18 @@ impl SymbolStore {
         })
     }
 
+    /// Given a list of name-value pairs, translate the names into [`Sym`]s and return a mapping
+    /// from symbols to values.
+    pub fn build_sym_map<'a, T>(
+        &mut self,
+        pairs: impl IntoIterator<Item = (&'a str, T)>,
+    ) -> HashMap<Sym, T> {
+        pairs
+            .into_iter()
+            .map(|(name, value)| (self.get_or_insert_named(name), value))
+            .collect()
+    }
+
     /// Generate a fresh unnamed symbol ID in this universe.
     ///
     /// # Notes

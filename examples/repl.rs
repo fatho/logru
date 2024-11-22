@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
@@ -330,9 +329,7 @@ impl ReplCommands {
     pub fn new(syms: &mut SymbolStore) -> Self {
         let commands = [("debug", ReplCmd::Debug)];
         Self {
-            goals: HashMap::from_iter(
-                commands.map(|(str, cmd)| (syms.get_or_insert_named(str), cmd)),
-            ),
+            goals: syms.build_sym_map(commands),
         }
     }
 

@@ -50,7 +50,7 @@ pub trait Resolver {
     fn resolve(
         &mut self,
         goal_id: term_arena::TermId,
-        goal_term: term_arena::Term,
+        goal_term: term_arena::AppTerm,
         context: &mut ResolveContext,
     ) -> Option<Resolved<Self::Choice>>;
 
@@ -128,7 +128,7 @@ impl<R: Resolver> Resolver for &mut R {
     fn resolve(
         &mut self,
         goal_id: term_arena::TermId,
-        goal_term: term_arena::Term,
+        goal_term: term_arena::AppTerm,
         context: &mut ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
         (*self).resolve(goal_id, goal_term, context)
@@ -262,8 +262,13 @@ impl<R: Resolver> SolutionIter<R> {
             let resolved = match goal_term {
                 // Unbound variables are vacuously true
                 term_arena::Term::Var(_) => Some(Resolved::Success),
-                // Send all other terms into the resolver
-                _ => self.resolver.resolve(goal_id, goal_term, &mut context),
+                // App terms are resolved
+                term_arena::Term::App(app) => self.resolver.resolve(goal_id, app, &mut context),
+                // Other terms are an error
+                _ => {
+                    // TODO: log
+                    None
+                }
             };
             let choice = match resolved {
                 None => {
@@ -526,17 +531,20 @@ impl SolutionState {
                     ast::Term::Var(v)
                 }
             }
-            term_arena::Term::App(term_arena::AppTerm(functor, args)) => {
-                ast::Term::App(ast::AppTerm {
-                    functor,
-                    args: self
-                        .terms
-                        .get_args(args)
-                        .map(|arg| self.extract_term(arg))
-                        .collect(),
-                })
-            }
+            term_arena::Term::App(app) => ast::Term::App(self.extract_app_term(app)),
             term_arena::Term::Int(i) => ast::Term::Int(i),
+        }
+    }
+
+    /// Convert an app term from the internal arena to the AST representation.
+    pub fn extract_app_term(&self, term: term_arena::AppTerm) -> ast::AppTerm {
+        ast::AppTerm {
+            functor: term.0,
+            args: self
+                .terms
+                .get_args(term.1)
+                .map(|arg| self.extract_term(arg))
+                .collect(),
         }
     }
 
@@ -600,22 +608,8 @@ impl SolutionState {
             (term_arena::Term::Var(goal_var), _) => self.set_var(goal_var, rule_term_id),
             (_, term_arena::Term::Var(rule_var)) => self.set_var(rule_var, goal_term_id),
             // two application terms
-            (
-                term_arena::Term::App(term_arena::AppTerm(goal_func, goal_args)),
-                term_arena::Term::App(term_arena::AppTerm(rule_func, rule_args)),
-            ) => {
-                // the terms must have the same functor symbol and the same arity
-                if goal_func != rule_func {
-                    return false;
-                }
-                if goal_args.len() != rule_args.len() {
-                    return false;
-                }
-
-                // and all the arguments must unify as well
-                goal_args.zip(rule_args).all(|(goal_arg, rule_arg)| {
-                    self.unify(self.terms.get_arg(goal_arg), self.terms.get_arg(rule_arg))
-                })
+            (term_arena::Term::App(goal_app), term_arena::Term::App(rule_app)) => {
+                self.unify_app(goal_app, rule_app)
             }
             // two integers
             (term_arena::Term::Int(goal_int), term_arena::Term::Int(rule_int)) => {
@@ -624,6 +618,35 @@ impl SolutionState {
             // incomptaible types
             (_, _) => false,
         }
+    }
+
+    /// Unify two app terms.
+    #[inline(always)]
+    pub fn unify_app(
+        &mut self,
+        goal_term: term_arena::AppTerm,
+        rule_term: term_arena::AppTerm,
+    ) -> bool {
+        if goal_term.0 == rule_term.0 {
+            self.unify_args(goal_term.1, rule_term.1)
+        } else {
+            false
+        }
+    }
+
+    /// Unify two argument ranges.
+    #[inline(always)]
+    pub fn unify_args(
+        &mut self,
+        goal_args: term_arena::ArgRange,
+        rule_args: term_arena::ArgRange,
+    ) -> bool {
+        if goal_args.len() != rule_args.len() {
+            return false;
+        }
+        goal_args.zip(rule_args).all(|(goal_arg, rule_arg)| {
+            self.unify(self.terms.get_arg(goal_arg), self.terms.get_arg(rule_arg))
+        })
     }
 
     /// Provide access to the terms defined in this solution.

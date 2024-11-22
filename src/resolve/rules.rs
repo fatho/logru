@@ -33,6 +33,8 @@ impl<'a> RuleResolver<'a> {
             .instantiate_blueprint(head_blueprint, var_offset);
         let instantiated_rule_head = conv_rule_head(head);
 
+        // TODO: simplify things even more so that we can use the argument ranges directly for
+        // unification, since we already know at this point that the head symbols match.
         if solution.unify(goal_term, instantiated_rule_head) {
             // instantiate tail terms
             let (tail, tail_blueprint) = rule.tail();
@@ -73,10 +75,9 @@ impl<'a> Resolver for RuleResolver<'a> {
     fn resolve(
         &mut self,
         goal_id: term_arena::TermId,
-        goal_term: term_arena::Term,
+        AppTerm(sym, _): term_arena::AppTerm,
         context: &mut ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
-        let AppTerm(sym, _) = goal_term.as_app()?;
         let rules = self.rules.rules_by_head(sym);
         let rest = self.apply_first_rule(rules, goal_id, context)?;
         if rest.is_empty() {

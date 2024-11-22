@@ -133,10 +133,9 @@ impl Resolver for ArithmeticResolver {
     fn resolve(
         &mut self,
         _goal_id: crate::term_arena::TermId,
-        goal_term: crate::term_arena::Term,
+        AppTerm(sym, args): crate::term_arena::AppTerm,
         context: &mut crate::search::ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
-        let AppTerm(sym, args) = goal_term.as_app()?;
         let pred = self.pred_map.get(&sym)?;
         match pred {
             Pred::Is => self.resolve_is(args, context),

@@ -359,24 +359,6 @@ pub enum Term {
     Int(i64),
 }
 
-impl Term {
-    /// If this term is [`Term::Int`], return the enclosed integer.
-    pub fn as_int(self) -> Option<i64> {
-        match self {
-            Term::Int(i) => Some(i),
-            _ => None,
-        }
-    }
-
-    /// If this term is [`Term::App`] return the symbol and arguments.
-    pub fn as_app(self) -> Option<AppTerm> {
-        match self {
-            Term::App(app) => Some(app),
-            _ => None,
-        }
-    }
-}
-
 /// An application term of the form `foo(arg1, arg2, arg3, ...)` that is part of a [`TermArena`].
 /// The argument range can be used to get the corresponding argument terms from the arena.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

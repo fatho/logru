@@ -386,10 +386,9 @@ impl<'s> Resolver for ReplResolver<'s> {
     fn resolve(
         &mut self,
         _goal_id: logru::term_arena::TermId,
-        goal_term: logru::term_arena::Term,
+        AppTerm(sym, args): logru::term_arena::AppTerm,
         context: &mut logru::search::ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
-        let AppTerm(sym, args) = goal_term.as_app()?;
         let goal = self.goals.get(&sym)?;
         match goal {
             ReplCmd::Debug => self.debug(args, context),

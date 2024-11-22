@@ -37,7 +37,7 @@ impl<R1: Resolver, R2: Resolver> Resolver for OrElse<R1, R2> {
     fn resolve(
         &mut self,
         goal_id: term_arena::TermId,
-        goal_term: term_arena::Term,
+        goal_term: term_arena::AppTerm,
         context: &mut ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
         self.first

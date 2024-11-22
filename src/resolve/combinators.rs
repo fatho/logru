@@ -39,18 +39,15 @@ impl<R1: Resolver, R2: Resolver> Resolver for OrElse<R1, R2> {
         goal_id: term_arena::TermId,
         goal_term: term_arena::Term,
         context: &mut ResolveContext,
-    ) -> Resolved<Self::Choice> {
-        match self.first.resolve(goal_id, goal_term, context) {
-            Resolved::Fail => match self.second.resolve(goal_id, goal_term, context) {
-                Resolved::Fail => Resolved::Fail,
-                Resolved::Success => Resolved::Success,
-                Resolved::SuccessRetry(choice) => {
-                    Resolved::SuccessRetry(OrElseChoice::Second(choice))
-                }
-            },
-            Resolved::Success => Resolved::Success,
-            Resolved::SuccessRetry(choice) => Resolved::SuccessRetry(OrElseChoice::First(choice)),
-        }
+    ) -> Option<Resolved<Self::Choice>> {
+        self.first
+            .resolve(goal_id, goal_term, context)
+            .map(|resolved| resolved.map_choice(OrElseChoice::First))
+            .or_else(|| {
+                self.second
+                    .resolve(goal_id, goal_term, context)
+                    .map(|resolved| resolved.map_choice(OrElseChoice::Second))
+            })
     }
 
     fn resume(

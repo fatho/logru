@@ -52,7 +52,7 @@ pub trait Resolver {
         goal_id: term_arena::TermId,
         goal_term: term_arena::Term,
         context: &mut ResolveContext,
-    ) -> Resolved<Self::Choice>;
+    ) -> Option<Resolved<Self::Choice>>;
 
     fn resume(
         &mut self,
@@ -105,13 +105,20 @@ impl<'c> ResolveContext<'c> {
 }
 
 pub enum Resolved<C> {
-    /// The goal failed.
-    Fail,
     /// The goal resolved to a single choice that was successfully applied to the state.
     Success,
     /// The goal resolved to multiple alternatives. The first was already applied to the state,
     /// while the remaining choice is captured in the type `C`.
     SuccessRetry(C),
+}
+
+impl<C> Resolved<C> {
+    pub fn map_choice<C2>(self, f: impl FnOnce(C) -> C2) -> Resolved<C2> {
+        match self {
+            Resolved::Success => Resolved::Success,
+            Resolved::SuccessRetry(c) => Resolved::SuccessRetry(f(c)),
+        }
+    }
 }
 
 impl<R: Resolver> Resolver for &mut R {
@@ -123,7 +130,7 @@ impl<R: Resolver> Resolver for &mut R {
         goal_id: term_arena::TermId,
         goal_term: term_arena::Term,
         context: &mut ResolveContext,
-    ) -> Resolved<Self::Choice> {
+    ) -> Option<Resolved<Self::Choice>> {
         (*self).resolve(goal_id, goal_term, context)
     }
 
@@ -254,20 +261,20 @@ impl<R: Resolver> SolutionIter<R> {
             };
             let resolved = match goal_term {
                 // Unbound variables are vacuously true
-                term_arena::Term::Var(_) => Resolved::Success,
+                term_arena::Term::Var(_) => Some(Resolved::Success),
                 // Send all other terms into the resolver
                 _ => self.resolver.resolve(goal_id, goal_term, &mut context),
             };
             let choice = match resolved {
-                Resolved::Fail => {
+                None => {
                     // Restore before state
                     self.unresolved_goals.push(goal_id);
                     // Then resume from current checkpoint
                     return self.resume_or_backtrack();
                 }
                 // A change was applied here, remember the choice
-                Resolved::Success => None,
-                Resolved::SuccessRetry(choice) => Some(choice),
+                Some(Resolved::Success) => None,
+                Some(Resolved::SuccessRetry(choice)) => Some(choice),
             };
 
             // At this point, the goal was successfully resolved

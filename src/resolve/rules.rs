@@ -74,22 +74,14 @@ impl<'a> Resolver for RuleResolver<'a> {
         goal_id: term_arena::TermId,
         goal_term: term_arena::Term,
         context: &mut ResolveContext,
-    ) -> Resolved<Self::Choice> {
-        if let term_arena::Term::App(sym, _) = goal_term {
-            let rules = self.rules.rules_by_head(sym);
-            if let Some(rest) = self.apply_first_rule(rules, goal_id, context) {
-                if rest.is_empty() {
-                    Resolved::Success
-                } else {
-                    Resolved::SuccessRetry(rest)
-                }
-            } else {
-                Resolved::Fail
-            }
+    ) -> Option<Resolved<Self::Choice>> {
+        let (sym, _) = goal_term.as_app()?;
+        let rules = self.rules.rules_by_head(sym);
+        let rest = self.apply_first_rule(rules, goal_id, context)?;
+        if rest.is_empty() {
+            Some(Resolved::Success)
         } else {
-            // Reject all other terms as potential goals in this resolver
-            // That way, eventually another resolver may pick them up.
-            Resolved::Fail
+            Some(Resolved::SuccessRetry(rest))
         }
     }
 

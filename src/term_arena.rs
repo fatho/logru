@@ -336,3 +336,21 @@ pub enum Term {
     /// A signed 64-bit integer
     Int(i64),
 }
+
+impl Term {
+    /// If this term is [`Term::Int`], return the enclosed integer.
+    pub fn as_int(self) -> Option<i64> {
+        match self {
+            Term::Int(i) => Some(i),
+            _ => None,
+        }
+    }
+
+    /// If this term is [`Term::App`] return the symbol and arguments.
+    pub fn as_app(self) -> Option<(Sym, ArgRange)> {
+        match self {
+            Term::App(sym, args) => Some((sym, args)),
+            _ => None,
+        }
+    }
+}

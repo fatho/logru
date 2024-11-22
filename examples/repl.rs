@@ -354,7 +354,11 @@ struct ReplResolver<'s> {
 }
 
 impl<'s> ReplResolver<'s> {
-    fn debug(&self, args: ArgRange, context: &mut logru::search::ResolveContext) -> Resolved<()> {
+    fn debug(
+        &self,
+        args: ArgRange,
+        context: &mut logru::search::ResolveContext,
+    ) -> Option<Resolved<()>> {
         let arg_str = args
             .map(|arg| {
                 let term_id = context.solution().terms().get_arg(arg);
@@ -364,7 +368,7 @@ impl<'s> ReplResolver<'s> {
             .collect::<Vec<_>>()
             .join(", ");
         tracing::info!("debug({arg_str})");
-        Resolved::Success
+        Some(Resolved::Success)
     }
 }
 
@@ -384,15 +388,12 @@ impl<'s> Resolver for ReplResolver<'s> {
         _goal_id: logru::term_arena::TermId,
         goal_term: logru::term_arena::Term,
         context: &mut logru::search::ResolveContext,
-    ) -> logru::search::Resolved<Self::Choice> {
-        if let logru::term_arena::Term::App(sym, args) = goal_term {
-            if let Some(goal) = self.goals.get(&sym) {
-                match goal {
-                    ReplCmd::Debug => return self.debug(args, context),
-                }
-            }
+    ) -> Option<Resolved<Self::Choice>> {
+        let (sym, args) = goal_term.as_app()?;
+        let goal = self.goals.get(&sym)?;
+        match goal {
+            ReplCmd::Debug => self.debug(args, context),
         }
-        Resolved::Fail
     }
 
     fn resume(

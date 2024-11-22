@@ -92,14 +92,10 @@ impl ArithmeticResolver {
         &mut self,
         args: ArgRange,
         context: &mut crate::search::ResolveContext,
-    ) -> Resolved<()> {
-        let Some([left, right]) = fixed_args(context.solution().terms(), args) else {
-            return Resolved::Fail;
-        };
+    ) -> Option<Resolved<()>> {
+        let [left, right] = fixed_args(context.solution().terms(), args)?;
         // Right must be fully instantiated and evaluate to integer formula
-        let Some(right_val) = self.eval_exp(context.solution(), right) else {
-            return Resolved::Fail;
-        };
+        let right_val = self.eval_exp(context.solution(), right)?;
 
         // Left must be variable or integer
         let (_left_id, left_term) = context.solution().follow_vars(left);
@@ -107,20 +103,13 @@ impl ArithmeticResolver {
             Term::Var(var) => {
                 // Allocate result and assign to unbound variable
                 let result_term = context.solution_mut().terms_mut().int(right_val);
-                if context.solution_mut().set_var(var, result_term) {
-                    Resolved::Success
-                } else {
-                    Resolved::Fail
-                }
+                context
+                    .solution_mut()
+                    .set_var(var, result_term)
+                    .then_some(Resolved::Success)
             }
-            Term::Int(left_val) => {
-                if left_val == right_val {
-                    Resolved::Success
-                } else {
-                    Resolved::Fail
-                }
-            }
-            Term::App(_, _) => Resolved::Fail,
+            Term::Int(left_val) => (left_val == right_val).then_some(Resolved::Success),
+            Term::App(_, _) => None,
         }
     }
 }
@@ -147,15 +136,12 @@ impl Resolver for ArithmeticResolver {
         _goal_id: crate::term_arena::TermId,
         goal_term: crate::term_arena::Term,
         context: &mut crate::search::ResolveContext,
-    ) -> Resolved<Self::Choice> {
-        if let Term::App(sym, args) = goal_term {
-            if let Some(pred) = self.pred_map.get(&sym) {
-                return match pred {
-                    Pred::Is => self.resolve_is(args, context),
-                };
-            }
+    ) -> Option<Resolved<Self::Choice>> {
+        let (sym, args) = goal_term.as_app()?;
+        let pred = self.pred_map.get(&sym)?;
+        match pred {
+            Pred::Is => self.resolve_is(args, context),
         }
-        Resolved::Fail
     }
 
     fn resume(

@@ -71,9 +71,22 @@ pub enum ParseErrorKind {
     /// The parser reached the end of the input, but expected more tokens to follow.
     UnexpectedEof,
     /// The parser encountered a token that doesn't belong in that place.
-    UnexpectedToken,
+    UnexpectedToken(Token),
+    /// The parser encountered input that could not be recognized as a token.
+    UnrecognizedToken,
     /// The parser encountered more tokens after the input should have ended.
     ExpectedEof,
+}
+
+impl ParseErrorKind {
+    /// Translate an unexpected item in the token stream (either an unexpected token or a lexer
+    /// error) into the matching [`ParseErrorKind`].
+    pub fn unexpected(res: Result<Token, ()>) -> Self {
+        match res {
+            Ok(tok) => Self::UnexpectedToken(tok),
+            Err(()) => Self::UnrecognizedToken,
+        }
+    }
 }
 
 /// A parser for terms using the Prolog-like syntax of the
@@ -127,9 +140,9 @@ impl<'a> Parser<'a> {
                 tokens.advance();
                 Vec::new()
             }
-            Some(_) => {
+            Some(other) => {
                 let (_, span) = tokens.next().unwrap();
-                return Err(ParseError::new(span, ParseErrorKind::UnexpectedToken));
+                return Err(ParseError::new(span, ParseErrorKind::unexpected(other)));
             }
             None => return Err(ParseError::new(tokens.eof(), ParseErrorKind::UnexpectedEof)),
         };
@@ -144,21 +157,21 @@ impl<'a> Parser<'a> {
         &mut self,
         tokens: &mut TokenStream,
         scope: &mut VarScope,
-    ) -> Result<Vec<AppTerm>, ParseError> {
-        let mut goals = vec![self.parse_appterm(tokens, scope)?];
+    ) -> Result<Vec<Term>, ParseError> {
+        let mut goals = vec![self.parse_term(tokens, scope)?];
         loop {
             match tokens.peek_token() {
                 Some(Ok(Token::Comma)) => {
                     tokens.advance();
-                    goals.push(self.parse_appterm(tokens, scope)?);
+                    goals.push(self.parse_term(tokens, scope)?);
                 }
                 Some(Ok(Token::Period)) => {
                     tokens.advance();
                     break;
                 }
-                Some(_) => {
+                Some(other) => {
                     let (_, span) = tokens.next().unwrap();
-                    return Err(ParseError::new(span, ParseErrorKind::UnexpectedToken));
+                    return Err(ParseError::new(span, ParseErrorKind::unexpected(other)));
                 }
                 None => return Err(ParseError::new(tokens.eof(), ParseErrorKind::UnexpectedEof)),
             }
@@ -167,8 +180,8 @@ impl<'a> Parser<'a> {
     }
 
     fn expect_eof(&mut self, tokens: &mut TokenStream) -> Result<(), ParseError> {
-        if let Some((_, span)) = tokens.next() {
-            Err(ParseError::new(span, ParseErrorKind::UnexpectedToken))
+        if let Some((other, span)) = tokens.next() {
+            Err(ParseError::new(span, ParseErrorKind::unexpected(other)))
         } else {
             Ok(())
         }
@@ -183,7 +196,7 @@ impl<'a> Parser<'a> {
             if actual == Ok(expected) {
                 Ok(span)
             } else {
-                Err(ParseError::new(span, ParseErrorKind::UnexpectedToken))
+                Err(ParseError::new(span, ParseErrorKind::unexpected(actual)))
             }
         } else {
             Err(ParseError::new(tokens.eof(), ParseErrorKind::UnexpectedEof))
@@ -209,9 +222,9 @@ impl<'a> Parser<'a> {
                         tokens.advance();
                         break;
                     }
-                    Some(_) => {
+                    Some(other) => {
                         let (_, span) = tokens.next().unwrap();
-                        return Err(ParseError::new(span, ParseErrorKind::UnexpectedToken));
+                        return Err(ParseError::new(span, ParseErrorKind::unexpected(other)));
                     }
                     None => {
                         return Err(ParseError::new(tokens.eof(), ParseErrorKind::UnexpectedEof))
@@ -236,6 +249,10 @@ impl<'a> Parser<'a> {
             Some(Ok(Token::Int(i))) => {
                 tokens.advance();
                 Ok(Term::Int(i))
+            }
+            Some(Ok(Token::Cut)) => {
+                tokens.advance();
+                Ok(Term::Cut)
             }
             _ => self.parse_appterm(tokens, scope).map(Term::App),
         }

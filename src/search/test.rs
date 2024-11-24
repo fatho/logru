@@ -57,7 +57,7 @@ fn genealogy() {
     // query all known grandparents of eve
     let solutions = query_dfs(
         &mut resolver,
-        &exists(|[x]| Query::single(grandparent, vec![x.into(), eve.into()])),
+        &exists(|[x]| Query::single_app(grandparent, vec![x.into(), eve.into()])),
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
@@ -67,7 +67,7 @@ fn genealogy() {
     // query all grandchildren of bob
     let solutions = query_dfs(
         &mut resolver,
-        &exists(|[x]| Query::single(grandparent, vec![bob.into(), x.into()])),
+        &exists(|[x]| Query::single_app(grandparent, vec![bob.into(), x.into()])),
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
@@ -77,7 +77,7 @@ fn genealogy() {
     // query all siblings of eve
     let solutions = query_dfs(
         &mut resolver,
-        &exists(|[x]| Query::single(siblings, vec![eve.into(), x.into()])),
+        &exists(|[x]| Query::single_app(siblings, vec![eve.into(), x.into()])),
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
@@ -142,14 +142,14 @@ fn arithmetic() {
     // query all zero numbers
     let solutions = query_dfs(
         &mut resolver,
-        &exists(|[x]| Query::single(is_zero, vec![x.into()])),
+        &exists(|[x]| Query::single_app(is_zero, vec![x.into()])),
     );
     assert_eq!(solutions.collect::<Vec<_>>(), vec![vec![Some(z.into())],]);
 
     // query the first natural numbers
     let solutions = query_dfs(
         &mut resolver,
-        &exists(|[x]| Query::single(is_natural, vec![x.into()])),
+        &exists(|[x]| Query::single_app(is_natural, vec![x.into()])),
     );
     assert_eq!(
         solutions.take(3).collect::<Vec<_>>(),
@@ -164,7 +164,7 @@ fn arithmetic() {
     let solutions = query_dfs(
         &mut resolver,
         &exists(|[x]| {
-            Query::single(
+            Query::single_app(
                 add,
                 vec![
                     ast::app(s, vec![ast::app(s, vec![z.into()])]),
@@ -186,7 +186,7 @@ fn arithmetic() {
     let solutions = query_dfs(
         &mut resolver,
         &exists(|[x]| {
-            Query::single(
+            Query::single_app(
                 add,
                 vec![
                     x.into(),

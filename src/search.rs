@@ -35,7 +35,7 @@ pub fn query_dfs<R: Resolver>(resolver: R, query: &Query) -> SolutionIter<R> {
             .goals
             .iter()
             .rev() // reverse so that the leftmost goal ends up on the top of the stack
-            .map(|app| solution.terms.insert_ast_appterm(&mut scratch, app))
+            .map(|app| solution.terms.insert_ast_term(&mut scratch, app))
             .collect(),
         checkpoints: vec![],
         solution,

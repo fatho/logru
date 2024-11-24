@@ -144,7 +144,7 @@ impl CompiledRule {
         let tail = rule
             .tail
             .iter()
-            .map(|tail| tail_blueprint.insert_ast_appterm(&mut scratch, tail))
+            .map(|tail| tail_blueprint.insert_ast_term(&mut scratch, tail))
             .collect();
         CompiledRule {
             head_blueprint,

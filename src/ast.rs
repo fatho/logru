@@ -187,7 +187,7 @@ pub struct Rule {
     pub head: AppTerm,
     /// The terms that need to hold for the `head` to become true. If the tail is empty, then the
     /// head is always true. The rule is then called a fact.
-    pub tail: Vec<AppTerm>,
+    pub tail: Vec<Term>,
     /// Names of the variables used in this rule
     pub scope: Option<VarScope>,
 }
@@ -213,7 +213,7 @@ impl Rule {
             functor: pred,
             args,
         };
-        self.tail.push(app_term);
+        self.tail.push(Term::App(app_term));
         self
     }
 }
@@ -232,14 +232,14 @@ impl Rule {
 /// let female = Sym::from_ord(1);
 /// let bob = Sym::from_ord(2);
 /// let rule = exists(|[x]|
-///     Query::single(grandparent, vec![bob.into(), x.into()])
-///     .and(female, vec![x.into()])
+///     Query::single_app(grandparent, vec![bob.into(), x.into()])
+///     .and_app(female, vec![x.into()])
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Query {
     /// The conunctive goals that need to be proven as part of this query.
-    pub goals: Vec<AppTerm>,
+    pub goals: Vec<Term>,
     /// Names of the variables used in this query
     pub scope: Option<VarScope>,
 }
@@ -251,22 +251,30 @@ impl Query {
     }
 
     /// A query consisting of a set of goals.
-    pub fn new(goals: Vec<AppTerm>, scope: Option<VarScope>) -> Query {
+    pub fn new(goals: Vec<Term>, scope: Option<VarScope>) -> Query {
         Query { goals, scope }
     }
 
     /// A query with just a single goal.
-    pub fn single(pred: Sym, args: Vec<Term>) -> Query {
-        Query::new(vec![AppTerm::new(pred, args)], None)
+    pub fn single_app(pred: Sym, args: Vec<Term>) -> Query {
+        Query::single(Term::App(AppTerm::new(pred, args)))
+    }
+
+    /// A query with just a single goal.
+    pub fn single(pred: Term) -> Query {
+        Query::new(vec![pred], None)
     }
 
     /// Add another goal to this query.
-    pub fn and(mut self, pred: Sym, args: Vec<Term>) -> Self {
-        let app_term = AppTerm {
+    pub fn and_app(self, pred: Sym, args: Vec<Term>) -> Self {
+        self.and(Term::App(AppTerm {
             functor: pred,
             args,
-        };
-        self.goals.push(app_term);
+        }))
+    }
+
+    pub fn and(mut self, pred: Term) -> Self {
+        self.goals.push(pred);
         self
     }
 

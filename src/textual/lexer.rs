@@ -30,6 +30,9 @@ pub enum Token {
     #[regex("[+-]?[0-9]+", parse_int)]
     Int(i64),
 
+    #[token("!")]
+    Cut,
+
     // We can also use this variant to define whitespace,
     // or any other matches we wish to skip.
     #[regex(r"[ \t\n\f]+", logos::skip)]

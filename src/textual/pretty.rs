@@ -47,6 +47,7 @@ impl<'a> Prettifier<'a> {
             }
             Term::App(app) => self.pretty_app(writer, app, scope),
             Term::Int(int) => write!(writer, "{int}"),
+            Term::Cut => write!(writer, "!"),
         }
     }
 
@@ -88,14 +89,14 @@ impl<'a> Prettifier<'a> {
     pub fn pretty_conjunction<W: std::fmt::Write>(
         &self,
         writer: &mut W,
-        goals: &[AppTerm],
+        goals: &[Term],
         scope: Option<&VarScope>,
     ) -> std::fmt::Result {
         if let Some((first, rest)) = goals.split_first() {
-            self.pretty_app(writer, first, scope)?;
+            self.pretty(writer, first, scope)?;
             for arg in rest {
                 write!(writer, ", ")?;
-                self.pretty_app(writer, arg, scope)?;
+                self.pretty(writer, arg, scope)?;
             }
         }
         write!(writer, ".")?;

@@ -7,20 +7,19 @@
 ## Overview
 
 At the heart of this project is a small, efficient Rust library for solving first-order predicate
-logic expressions like they can be found in e.g. Prolog.
+logic expressions like they can be found in e.g. Prolog. Compare to the latter, this library is much
+more simplistic, though extensible.
 
 Additionally, there is a [REPL example](examples/repl.rs) for interactively playing around with the
 implementation.
-
-Compared to Prolog, it currently lacks some features though. Most notable, there are
-- no negation or cut,
-- no special built-in types (like integers)
 
 Features that are implemented:
 - Standard (compound) terms
 - Named variables & wildcards
 - DFS-based inference
-- Custom predicate resolvers (e.g. with side effects)
+- A "cut" operation for pruning the search space
+- Integer arithmetic
+- Extensibility through custom predicate resolvers (e.g. predicates with side effects)
 
 ## Showcase
 
@@ -69,6 +68,38 @@ Found solution:
   Y = s(s(s(s(s(z)))))
 No more solutions.
 ```
+
+While there is no standard library, using the cut operation, it is possible to build many of the
+common combinators, such as `once`:
+
+```
+?- :define once(X) :- X, !.
+Defined!
+```
+
+Given a predicate producing multiple choices...
+
+```
+?- :define foo(hello). foo(world).
+Defined!
+?- foo(X).
+Found solution:
+  X = hello
+Found solution:
+  X = world
+No more solutions.
+```
+
+..., we can now restrict it to produce only the first choice:
+
+```
+?- once(foo(X)).
+Found solution:
+  X = hello
+No more solutions.
+```
+
+Other combiantors, like negation, can also be implemented using cut.
 
 ## Rust API
 
@@ -139,7 +170,7 @@ this answer:
 let solutions = query_dfs(
     &r,
     &exists(|[x]| {
-        Query::single(
+        Query::single_app(
             add,
             vec![
                 x.into(),

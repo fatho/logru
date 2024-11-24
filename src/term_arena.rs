@@ -121,6 +121,13 @@ impl TermArena {
         term
     }
 
+    /// Allocate a new cut term.
+    pub fn cut(&mut self) -> TermId {
+        let term = TermId(self.terms.len());
+        self.terms.push(Term::Cut);
+        term
+    }
+
     /// Copy terms from another "blueprint" arena into this arena, and apply an offset to all the
     /// variable indices used inside the blueprint.
     ///
@@ -178,6 +185,7 @@ impl TermArena {
                     },
                 )),
                 Term::Int(i) => Term::Int(*i),
+                Term::Cut => Term::Cut,
             }));
         self.args.extend(
             blueprint
@@ -201,6 +209,7 @@ impl TermArena {
             ast::Term::Var(v) => self.var(*v),
             ast::Term::App(app) => self.insert_ast_appterm(scratch, app),
             ast::Term::Int(i) => self.int(*i),
+            ast::Term::Cut => self.cut(),
         }
     }
 
@@ -357,6 +366,8 @@ pub enum Term {
     App(AppTerm),
     /// A signed 64-bit integer
     Int(i64),
+    /// Prune all further alternatives down to the level of the goal that the cut appeared in.
+    Cut,
 }
 
 /// An application term of the form `foo(arg1, arg2, arg3, ...)` that is part of a [`TermArena`].

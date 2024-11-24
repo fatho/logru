@@ -84,6 +84,8 @@ impl ArithmeticResolver {
                 Some(ret)
             }
             Term::Int(i) => Some(i),
+            // TODO: log: any other term is an error
+            _ => None,
         }
     }
 
@@ -108,7 +110,8 @@ impl ArithmeticResolver {
                     .then_some(Resolved::Success)
             }
             Term::Int(left_val) => (left_val == right_val).then_some(Resolved::Success),
-            Term::App(_) => None,
+            // TODO: log invalid terms
+            _ => None,
         }
     }
 }

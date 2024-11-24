@@ -111,7 +111,7 @@
 //! #     .when(add, vec![p.into(), q.into(), r.into()])
 //! # }));
 //! let query = ast::exists(|[x]| {
-//!     ast::Query::single(
+//!     ast::Query::single_app(
 //!         add,
 //!         vec![
 //!             x.into(),

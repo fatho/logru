@@ -10,7 +10,7 @@ mod test;
 
 use crate::{
     ast::{self, Query, Var},
-    term_arena::{self, TermArena},
+    term_arena::{self, TermArena, TermId},
 };
 
 /// Solve queries against the universe using a depth-first-search.
@@ -35,7 +35,8 @@ pub fn query_dfs<R: Resolver>(resolver: R, query: &Query) -> SolutionIter<R> {
             .goals
             .iter()
             .rev() // reverse so that the leftmost goal ends up on the top of the stack
-            .map(|app| solution.terms.insert_ast_appterm(&mut scratch, app))
+            .map(|app| solution.terms.insert_ast_term(&mut scratch, app))
+            .map(|goal| GoalFrame { goal, cut_level: 0 })
             .collect(),
         checkpoints: vec![],
         solution,
@@ -65,9 +66,10 @@ pub trait Resolver {
 /// The interface into the search state that is provided to a [`Resolver`] for resolving goals.
 pub struct ResolveContext<'c> {
     solution: &'c mut SolutionState,
-    goal_stack: &'c mut Vec<term_arena::TermId>,
+    goal_stack: &'c mut Vec<GoalFrame>,
     checkpoint: &'c SolutionCheckpoint,
     goal_len: usize,
+    cut_level: usize,
 }
 
 impl<'c> ResolveContext<'c> {
@@ -86,14 +88,21 @@ impl<'c> ResolveContext<'c> {
     /// Push an additional goal to the stack, to be resolved later.
     #[inline(always)]
     pub fn push_goal(&mut self, goal: term_arena::TermId) {
-        self.goal_stack.push(goal);
+        self.goal_stack.push(GoalFrame {
+            goal,
+            cut_level: self.cut_level,
+        });
     }
 
     /// Extend the goal stack from the provided iterator. The last item will end up on top of the
     /// stack, and thus the next goal to be resolved.
     #[inline(always)]
     pub fn extend_goals(&mut self, new_goals: impl Iterator<Item = term_arena::TermId>) {
-        self.goal_stack.extend(new_goals);
+        let level = self.cut_level;
+        self.goal_stack.extend(new_goals.map(|goal| GoalFrame {
+            goal,
+            cut_level: level,
+        }));
     }
 
     /// Reset the solution state to the current choice point.
@@ -156,7 +165,7 @@ pub struct SolutionIter<R: Resolver> {
     /// The rule database that can be used for resolving queries.
     resolver: R,
     /// Goals that still need to be solved
-    unresolved_goals: Vec<term_arena::TermId>,
+    unresolved_goals: Vec<GoalFrame>,
     /// Checkpoints created for past decisions, used for backtracking
     checkpoints: Vec<Checkpoint<R>>,
     /// Current (partial) solution
@@ -177,6 +186,32 @@ struct Checkpoint<R: Resolver> {
     /// Checkpoint of the partial solution to undo any assignments that have been made since this
     /// choice point.
     solution_checkpoint: SolutionCheckpoint,
+    /// The cut-level associated with this checkpoint. Determined by the context in which it was
+    /// executed.
+    cut_level: usize,
+}
+
+impl<R: Resolver> Checkpoint<R> {
+    /// Restore the original [`GoalFrame`] from this checkpoint, used for backtracking.
+    fn restore_goal_frame(self) -> GoalFrame {
+        GoalFrame {
+            goal: self.goal,
+            cut_level: self.cut_level,
+        }
+    }
+}
+
+/// A goal associated with extra information.
+///
+/// NOTE: When we need more information, it may no longer be practical to store frames inline, and
+/// we may instead want to store the associated data in a deduplicated, refcounted manner.
+#[derive(Debug)]
+struct GoalFrame {
+    /// The goal-term to solve
+    goal: term_arena::TermId,
+    /// The checkpoint index at which this goal was introduced. Used for search-space pruning via
+    /// [`term_arena::Term::Cut`].
+    cut_level: usize,
 }
 
 /// Status of the solution iterator after performing a step.
@@ -221,7 +256,7 @@ impl<R: Resolver> SolutionIter<R> {
     /// #     .when(is_natural, vec![p.into()])
     /// # }));
     /// # let query = ast::exists(|[x]| {
-    /// #     ast::Query::single(
+    /// #     ast::Query::single_app(
     /// #         add,
     /// #         vec![
     /// #             x.into(),
@@ -248,9 +283,9 @@ impl<R: Resolver> SolutionIter<R> {
     pub fn step(&mut self) -> Step {
         // When there are still unresolved goals left, we create a choice checkpoint for the
         // top-most one.
-        if let Some(goal) = self.unresolved_goals.pop() {
+        if let Some(goal_frame) = self.unresolved_goals.pop() {
             // resolve goal
-            let (goal_id, goal_term) = self.solution.follow_vars(goal);
+            let goal_term = self.solution.terms.get_term(goal_frame.goal);
             let solution_checkpoint = self.solution.checkpoint();
             let goals_checkpoint = self.unresolved_goals.len();
             let mut context = ResolveContext {
@@ -258,22 +293,40 @@ impl<R: Resolver> SolutionIter<R> {
                 goal_stack: &mut self.unresolved_goals,
                 checkpoint: &solution_checkpoint,
                 goal_len: goals_checkpoint,
+                cut_level: self.checkpoints.len(),
             };
             let resolved = match goal_term {
-                // Unbound variables are vacuously true
-                term_arena::Term::Var(_) => Some(Resolved::Success),
+                // Variables are an implicit call to the predicate they are bound to
+                term_arena::Term::Var(v) => {
+                    if let Some(new_goal) = context.solution.get_var(v) {
+                        // Replace goal
+                        context.push_goal(new_goal);
+                    }
+                    // Unbound variables are vacuously true
+                    Some(Resolved::Success)
+                }
                 // App terms are resolved
-                term_arena::Term::App(app) => self.resolver.resolve(goal_id, app, &mut context),
+                term_arena::Term::App(app) => {
+                    self.resolver.resolve(goal_frame.goal, app, &mut context)
+                }
+                // Cut prunes the search alternatives down to the current goal's cut level
+                term_arena::Term::Cut => {
+                    // Remove choices from all checkpoints between current cut level and the top:
+                    for checkpoint in self.checkpoints[goal_frame.cut_level..].iter_mut() {
+                        checkpoint.choice = None;
+                    }
+                    Some(Resolved::Success)
+                }
                 // Other terms are an error
                 _ => {
-                    // TODO: log
+                    // TODO: log invalid goal term
                     None
                 }
             };
             let choice = match resolved {
                 None => {
                     // Restore before state
-                    self.unresolved_goals.push(goal_id);
+                    self.unresolved_goals.push(goal_frame);
                     // Then resume from current checkpoint
                     return self.resume_or_backtrack();
                 }
@@ -284,10 +337,11 @@ impl<R: Resolver> SolutionIter<R> {
 
             // At this point, the goal was successfully resolved
             self.checkpoints.push(Checkpoint {
-                goal,
+                goal: goal_frame.goal,
                 choice,
                 solution_checkpoint,
                 goals_checkpoint,
+                cut_level: goal_frame.cut_level,
             });
             self.yield_or_continue()
         } else {
@@ -330,6 +384,7 @@ impl<R: Resolver> SolutionIter<R> {
             .last_mut()
             .expect("invariant: there is always a checkpoint when this is called");
 
+        // Any goals resulting from choices on this checkpoint inherit the current cut-level.
         let success = match &mut checkpoint.choice {
             None => false,
             Some(choice) => {
@@ -338,6 +393,7 @@ impl<R: Resolver> SolutionIter<R> {
                     goal_stack: &mut self.unresolved_goals,
                     checkpoint: &checkpoint.solution_checkpoint,
                     goal_len: checkpoint.goals_checkpoint,
+                    cut_level: checkpoint.cut_level,
                 };
                 self.resolver.resume(choice, checkpoint.goal, &mut context)
             }
@@ -348,7 +404,7 @@ impl<R: Resolver> SolutionIter<R> {
         } else {
             // checkpoint exhausted, discard checkpoint and put goal back
             let discarded = self.checkpoints.pop().expect("we know there is one here");
-            self.unresolved_goals.push(discarded.goal);
+            self.unresolved_goals.push(discarded.restore_goal_frame());
             false
         }
     }
@@ -469,6 +525,20 @@ impl SolutionState {
         true
     }
 
+    /// Return the term assigned to a variable, or `None` if the variable is unbound.
+    ///
+    /// Similar to [`SolutionState::follow_vars`], but intended for directly reading the value of a
+    /// variable, rather than simply resolving any bound variables.
+    pub fn get_var(&self, mut var: Var) -> Option<TermId> {
+        while let Some(term) = self.variables[var.ord()] {
+            match self.terms.get_term(term) {
+                term_arena::Term::Var(next) => var = next,
+                _ => return Some(term),
+            }
+        }
+        None
+    }
+
     /// Check whether the variable occurs inside the given term.
     fn occurs(&mut self, var: Var, mut term: term_arena::TermId) -> bool {
         loop {
@@ -490,6 +560,7 @@ impl SolutionState {
                 }
                 // Primitive values cannot contain variables
                 term_arena::Term::Int(_) => {}
+                term_arena::Term::Cut => {}
             }
             match self.occurs_stack.pop() {
                 // More terms to check
@@ -533,6 +604,7 @@ impl SolutionState {
             }
             term_arena::Term::App(app) => ast::Term::App(self.extract_app_term(app)),
             term_arena::Term::Int(i) => ast::Term::Int(i),
+            term_arena::Term::Cut => ast::Term::Cut,
         }
     }
 

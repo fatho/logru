@@ -1,4 +1,5 @@
 use super::*;
+use crate::textual::TextualUniverse;
 use crate::{ast::*, RuleResolver, RuleSet, SymbolStore};
 
 #[test]
@@ -200,4 +201,65 @@ fn arithmetic() {
         solutions.collect::<Vec<_>>(),
         vec![vec![Some(ast::app(s, vec![z.into()]))],]
     );
+}
+
+#[test]
+fn cut() {
+    let mut tu = TextualUniverse::new();
+    tu.load_str(
+        r"
+    foo(hello).
+    foo(world).
+
+    world_or_baz(world).
+    world_or_baz(baz).
+
+    once(X) :- X, !.
+
+    not(X) :- X, !, fail.
+    not(X).
+
+    bar(X) :- foo(X), !.
+    bar(baz).
+    ",
+    )
+    .unwrap();
+
+    #[track_caller]
+    fn assert_solutions(tu: &mut TextualUniverse, query: &str, solutions: &[&[Option<&str>]]) {
+        let query = tu.prepare_query(query).unwrap();
+        let rets: Vec<_> = query_dfs(tu.resolver(), &query).collect();
+        let pretty_solutions: Vec<_> = rets
+            .into_iter()
+            .map(|sol| {
+                sol.into_iter()
+                    .map(|var| {
+                        var.map(|term| tu.pretty().term_to_string(&term, query.scope.as_ref()))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let expected_solutions = solutions
+            .iter()
+            .map(|sol| {
+                sol.iter()
+                    .map(|var| var.as_ref().map(|str| str.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(pretty_solutions, expected_solutions);
+    }
+
+    assert_solutions(&mut tu, "foo(X), !.", &[&[Some("hello")]]);
+    assert_solutions(&mut tu, "once(foo(X)).", &[&[Some("hello")]]);
+    assert_solutions(&mut tu, "bar(X).", &[&[Some("hello")]]);
+    assert_solutions(&mut tu, "bar(baz).", &[&[]]);
+    assert_solutions(
+        &mut tu,
+        "world_or_baz(X), bar(X).",
+        &[&[Some("world")], &[Some("baz")]],
+    );
+    assert_solutions(&mut tu, "not(foo(bla)).", &[&[]]);
+    assert_solutions(&mut tu, "not(foo(hello)).", &[]);
 }

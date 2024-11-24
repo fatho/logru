@@ -266,7 +266,7 @@ impl<R: Resolver> SolutionIter<R> {
                 term_arena::Term::App(app) => self.resolver.resolve(goal_id, app, &mut context),
                 // Other terms are an error
                 _ => {
-                    // TODO: log
+                    // TODO: log invalid goal term
                     None
                 }
             };
@@ -490,6 +490,7 @@ impl SolutionState {
                 }
                 // Primitive values cannot contain variables
                 term_arena::Term::Int(_) => {}
+                term_arena::Term::Cut => {}
             }
             match self.occurs_stack.pop() {
                 // More terms to check
@@ -533,6 +534,7 @@ impl SolutionState {
             }
             term_arena::Term::App(app) => ast::Term::App(self.extract_app_term(app)),
             term_arena::Term::Int(i) => ast::Term::Int(i),
+            term_arena::Term::Cut => ast::Term::Cut,
         }
     }
 

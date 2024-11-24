@@ -47,6 +47,7 @@ impl<'a> Prettifier<'a> {
             }
             Term::App(app) => self.pretty_app(writer, app, scope),
             Term::Int(int) => write!(writer, "{int}"),
+            Term::Cut => write!(writer, "!"),
         }
     }
 

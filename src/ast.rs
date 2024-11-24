@@ -78,6 +78,10 @@ pub enum Term {
     App(AppTerm),
     /// A signed 64-bit integer
     Int(i64),
+    /// The special built-in cut predicate.
+    ///
+    /// Evaluating it prunes all further choices for the currently active rule.
+    Cut,
 }
 
 impl Term {
@@ -91,6 +95,7 @@ impl Term {
             Term::Var(v) => v.0 + 1,
             Term::App(app) => app.count_var_slots(),
             Term::Int(_) => 0,
+            Term::Cut => 0,
         }
     }
 }

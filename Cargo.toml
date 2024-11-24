@@ -1,6 +1,6 @@
 [package]
 name = "logru"
-version = "0.2.0"
+version = "0.3.0"
 description = "A small, embeddable and fast interpreter for a subset of Prolog."
 keywords = ["prolog", "logic-programming", "first-order-logic"]
 categories = ["compilers", "algorithms", "mathematics"]

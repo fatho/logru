@@ -154,3 +154,65 @@ impl Resolver for ArithmeticResolver {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::ast::Term;
+    use crate::query_dfs;
+    use crate::resolve::ResolverExt;
+    use crate::textual::TextualUniverse;
+
+    use super::ArithmeticResolver;
+
+    #[test]
+    fn simple() {
+        let mut tu = TextualUniverse::new();
+        let query = tu
+            .prepare_query("is(X, add(3, mul(3, sub(6, div(10, rem(10, pow(2,3))))))).")
+            .unwrap();
+        let mut results = query_dfs(
+            ArithmeticResolver::new(&mut tu.symbols).or_else(tu.resolver()),
+            &query,
+        );
+        assert_eq!(results.next(), Some(vec![Some(Term::Int(6))]));
+        assert!(results.next().is_none());
+    }
+
+    #[test]
+    fn complex() {
+        let mut tu = TextualUniverse::new();
+        let mut arith = ArithmeticResolver::new(&mut tu.symbols);
+        tu.load_str(
+            r"
+        eq(Exp1, Exp2) :- is(X, Exp1), is(X, Exp2), !.
+        eq(Exp1, Exp2) :- is(Exp1, Exp2), !.
+        eq(Exp1, Exp2) :- is(Exp2, Exp1), !.
+        ",
+        )
+        .unwrap();
+        {
+            let query = tu.prepare_query("eq(add(2, 2), pow(2, 2)).").unwrap();
+            let mut results = query_dfs(arith.by_ref().or_else(tu.resolver()), &query);
+            assert_eq!(results.next(), Some(vec![]));
+            assert!(results.next().is_none());
+        }
+        {
+            let query = tu.prepare_query("eq(X, pow(2, 2)).").unwrap();
+            let mut results = query_dfs(arith.by_ref().or_else(tu.resolver()), &query);
+            assert_eq!(results.next(), Some(vec![Some(Term::Int(4))]));
+            assert!(results.next().is_none());
+        }
+        {
+            let query = tu.prepare_query("eq(add(2, 2), X).").unwrap();
+            let mut results = query_dfs(arith.by_ref().or_else(tu.resolver()), &query);
+            assert_eq!(results.next(), Some(vec![Some(Term::Int(4))]));
+            assert!(results.next().is_none());
+        }
+        {
+            let query = tu.prepare_query("eq(2, 2).").unwrap();
+            let mut results = query_dfs(arith.by_ref().or_else(tu.resolver()), &query);
+            assert_eq!(results.next(), Some(vec![]));
+            assert!(results.next().is_none());
+        }
+    }
+}

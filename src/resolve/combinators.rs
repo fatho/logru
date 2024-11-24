@@ -13,6 +13,11 @@ pub trait ResolverExt: Resolver {
             second: other,
         }
     }
+
+    /// Use the resolver by reference, rather than by value.
+    fn by_ref(&mut self) -> &mut Self {
+        self
+    }
 }
 
 impl<R: Resolver> ResolverExt for R {}

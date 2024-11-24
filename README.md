@@ -245,12 +245,13 @@ false.
 
 Without committing to any sort of timeline, additional features that are worth experimenting with
 are:
+- More natural support for conjunctions and disjunctions (`,` and `;` respectively in Prolog).
+- Some sort of standard library.
 - Recursion and memory limits.
 - A profiling mode that counts some interesting facts and figures about the solver (e.g. number of
   steps taken, number of instantiated rules, peak memory usage).
 - Making things even faster by e.g. optimising the occurs check.
 - Auto-completion in the REPL.
-- Cut and negation (which may be possible as a custom resolver).
 
 ## License
 

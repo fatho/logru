@@ -301,17 +301,24 @@ impl VarScope {
         Self { names: Vec::new() }
     }
 
-    /// Get the index associated with a name, or insert a new association.
-    pub fn get_or_insert(&mut self, name: &str) -> Var {
+    /// Return the variable with the given name, if one exists.
+    pub fn get(&self, name: &str) -> Option<Var> {
         self.names
             .iter()
-            .position(|existing| existing.as_ref().map_or(false, |x| x == name))
-            .map(Var::from_ord)
-            .unwrap_or_else(|| {
-                let ord = self.names.len();
-                self.names.push(Some(name.to_string()));
-                Var::from_ord(ord)
+            .position(|n| match n {
+                Some(n) => n == name,
+                _ => false,
             })
+            .map(Var::from_ord)
+    }
+
+    /// Get the index associated with a name, or insert a new association.
+    pub fn get_or_insert(&mut self, name: &str) -> Var {
+        self.get(name).unwrap_or_else(|| {
+            let ord = self.names.len();
+            self.names.push(Some(name.to_string()));
+            Var::from_ord(ord)
+        })
     }
 
     /// Insert a new unnamed wildcard variable.
@@ -324,6 +331,14 @@ impl VarScope {
     /// Return the associated name of the given variable.
     pub fn get_name(&self, var: Var) -> Option<&str> {
         self.names.get(var.ord()).and_then(|n| n.as_deref())
+    }
+
+    /// Returns the names of variables
+    pub fn iter_names(&self) -> impl Iterator<Item = &str> {
+        self.names
+            .iter()
+            .filter_map(|n| n.as_ref())
+            .map(|n| n.as_str())
     }
 }
 
@@ -355,4 +370,39 @@ pub fn forall<const N: usize>(f: impl FnOnce([Var; N]) -> Rule) -> Rule {
 /// See the example for the [`Query`] type.
 pub fn exists<const N: usize>(f: impl FnOnce([Var; N]) -> Query) -> Query {
     quantify(f)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn scope_getter() {
+        let scope = VarScope {
+            names: vec![Some("A".into()), None, Some("C".into())],
+        };
+        assert_eq!(scope.get("A"), Some(Var(0)));
+        assert_eq!(scope.get("B"), None);
+        assert_eq!(scope.get("C"), Some(Var(2)));
+        assert_eq!(scope.get("D"), None);
+    }
+
+    #[test]
+    fn scope_get_insertter() {
+        let mut scope = VarScope {
+            names: vec![Some("A".into()), None, Some("C".into())],
+        };
+        assert_eq!(scope.get("B"), None);
+        let var = scope.get_or_insert("B");
+        assert_eq!(scope.get("B"), Some(var));
+    }
+
+    #[test]
+    fn scope_iter() {
+        let scope = VarScope {
+            names: vec![Some("A".into()), None, Some("C".into())],
+        };
+
+        assert_eq!(scope.iter_names().collect::<Vec<_>>(), vec!["A", "C"]);
+    }
 }

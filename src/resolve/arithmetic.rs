@@ -160,6 +160,7 @@ mod tests {
     use crate::ast::Term;
     use crate::query_dfs;
     use crate::resolve::ResolverExt;
+    use crate::search::Solution;
     use crate::textual::TextualUniverse;
 
     use super::ArithmeticResolver;
@@ -174,7 +175,7 @@ mod tests {
             ArithmeticResolver::new(&mut tu.symbols).or_else(tu.resolver()),
             &query,
         );
-        assert_eq!(results.next(), Some(vec![Some(Term::Int(6))]));
+        assert_eq!(results.next(), Some(Solution(vec![Some(Term::Int(6))])));
         assert!(results.next().is_none());
     }
 
@@ -193,25 +194,25 @@ mod tests {
         {
             let query = tu.prepare_query("eq(add(2, 2), pow(2, 2)).").unwrap();
             let mut results = query_dfs(arith.by_ref().or_else(tu.resolver()), &query);
-            assert_eq!(results.next(), Some(vec![]));
+            assert_eq!(results.next(), Some(Solution(vec![])));
             assert!(results.next().is_none());
         }
         {
             let query = tu.prepare_query("eq(X, pow(2, 2)).").unwrap();
             let mut results = query_dfs(arith.by_ref().or_else(tu.resolver()), &query);
-            assert_eq!(results.next(), Some(vec![Some(Term::Int(4))]));
+            assert_eq!(results.next(), Some(Solution(vec![Some(Term::Int(4))])));
             assert!(results.next().is_none());
         }
         {
             let query = tu.prepare_query("eq(add(2, 2), X).").unwrap();
             let mut results = query_dfs(arith.by_ref().or_else(tu.resolver()), &query);
-            assert_eq!(results.next(), Some(vec![Some(Term::Int(4))]));
+            assert_eq!(results.next(), Some(Solution(vec![Some(Term::Int(4))])));
             assert!(results.next().is_none());
         }
         {
             let query = tu.prepare_query("eq(2, 2).").unwrap();
             let mut results = query_dfs(arith.by_ref().or_else(tu.resolver()), &query);
-            assert_eq!(results.next(), Some(vec![]));
+            assert_eq!(results.next(), Some(Solution(vec![])));
             assert!(results.next().is_none());
         }
     }

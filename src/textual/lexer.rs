@@ -37,6 +37,9 @@ pub enum Token {
     // or any other matches we wish to skip.
     #[regex(r"[ \t\n\f]+", logos::skip)]
     Whitespace,
+
+    #[regex(r"%.*", logos::skip)]
+    LineComment,
 }
 
 fn parse_int(lex: &mut Lexer<Token>) -> Option<i64> {

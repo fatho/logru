@@ -312,3 +312,36 @@ fn test_rule_parsing() {
     rule_roundtrip_test("is_natural(s(X)) :- is_natural(X).");
     rule_roundtrip_test("grandparent(X, Y) :- parent(X, Z), parent(Z, Y).");
 }
+
+#[test]
+fn test_comment_parsing() {
+    let mut nu = SymbolStore::new();
+    let mut p = Parser::new(&mut nu);
+    let with_comment = p.parse_rule_str("foo. % example comment").unwrap();
+    let no_comment = p.parse_rule_str("foo.").unwrap();
+    assert_eq!(with_comment, no_comment);
+    let with_comment = p.parse_rule_str("foo. % bar.").unwrap();
+    assert_eq!(with_comment, no_comment);
+
+    let no_comment = p
+        .parse_rules_str(
+            "foo.
+bar.",
+        )
+        .unwrap();
+    let with_comment = p
+        .parse_rules_str(
+            "foo. % comment
+bar.",
+        )
+        .unwrap();
+    assert_eq!(with_comment, no_comment);
+    let with_comment = p
+        .parse_rules_str(
+            "%comment
+foo.
+bar.",
+        )
+        .unwrap();
+    assert_eq!(with_comment, no_comment);
+}

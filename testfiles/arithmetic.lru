@@ -1,3 +1,4 @@
+% Arithmetics test
 is_natural(z).
 is_natural(s(X)) :- is_natural(X).
 

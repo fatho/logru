@@ -67,9 +67,9 @@ pub use self::{parser::Parser, pretty::Prettifier};
 /// let solutions = query_dfs(u.resolver(), &query);
 /// for solution in solutions.take(5) {
 ///     println!("SOLUTION:");
-///     for (index, var) in solution.into_iter().enumerate() {
-///         if let Some(term) = var {
-///             println!("  ${} = {}", index, u.pretty().term_to_string(&term, query.scope.as_ref()));
+///     for (var, term) in solution.iter_vars() {
+///         if let Some(term) = term {
+///             println!("  ${} = {}", var.ord(), u.pretty().term_to_string(&term, query.scope.as_ref()));
 ///         } else {
 ///             println!("<bug: no solution>");
 ///         }

@@ -11,11 +11,11 @@ fn main() {
 
     for solution in solutions.take(10) {
         println!("SOLUTION:");
-        for (index, var) in solution.into_iter().enumerate() {
-            if let Some(term) = var {
+        for (var, term) in solution.iter_vars() {
+            if let Some(term) = term {
                 println!(
                     "  ${} = {}",
-                    index,
+                    var.ord(),
                     u.pretty().term_to_string(&term, query.scope.as_ref())
                 );
             } else {

@@ -214,6 +214,47 @@ struct GoalFrame {
     cut_level: usize,
 }
 
+/// A single assignment of variables to terms.
+///
+/// The variables returned in this struture correspond to the goals via [ordinals](crate::ast::Var::ord).
+/// i.e. the assignment for a variable `x: Var` is stored at index
+/// `x.ord()`.
+///
+/// Names of variables are not stored here. They can be resolved using the matching Scope.
+///
+/// Note that even in valid solutions, not all variables need to have an assignment. For
+/// example, given the rule
+///
+/// ```prolog
+/// anything(X).
+/// ```
+///
+/// the query `anything(X)` will be true for any `X`, hence even a valid solution won't have an
+/// assignment for this variable.
+#[derive(PartialEq, Debug, Clone)]
+pub struct Solution(pub Vec<Option<ast::Term>>);
+
+impl Solution {
+    /// Returns a reference to the vector containing all assignments of terms to variables.
+    /// The vector's indices correspond to ordinals of the variables.
+    pub fn vars(&self) -> &Vec<Option<ast::Term>> {
+        &self.0
+    }
+
+    /// Iterates over all variables and their assigned terms.
+    pub fn iter_vars(&self) -> impl Iterator<Item = (Var, Option<&ast::Term>)> {
+        self.0
+            .iter()
+            .enumerate()
+            .map(|(i, term)| (Var::from_ord(i), term.as_ref()))
+    }
+
+    /// Returns the term matching this variable
+    pub fn get(&self, var: Var) -> Option<&ast::Term> {
+        self.0[var.ord()].as_ref()
+    }
+}
+
 /// Status of the solution iterator after performing a step.
 ///
 /// See [SolutionIter::step] for a usage example.
@@ -354,22 +395,8 @@ impl<R: Resolver> SolutionIter<R> {
     /// Usually, this function should be called right after `step` returned `Step::Yield`. In taht
     /// case, it will return a valid solution to the query. It may be called at any point though,
     /// but the assignment will be incomplete and might not even be a part of a valid solution.
-    ///
-    /// The indexes in the resulting vector correspond to the [ordinals](crate::ast::Var::ord) of
-    /// the goal variables, i.e. the assignment for a variable `x: Var` is stored at index
-    /// `x.ord()`.
-    ///
-    /// Note that even in valid solutions, not all variables need to have an assignment. For
-    /// example, given the rule
-    ///
-    /// ```prolog
-    /// anything(X).
-    /// ```
-    ///
-    /// the query `anything(X)` will be true for any `X`, hence even a valid solution won't have an
-    /// assignment for this variable.
-    pub fn get_solution(&self) -> Vec<Option<ast::Term>> {
-        self.solution.get_solution()
+    pub fn get_solution(&self) -> Solution {
+        Solution(self.solution.get_solution())
     }
 
     /// Try the next alternative of the top-most checkpoint and return whether we committed to a
@@ -440,7 +467,7 @@ impl<R: Resolver> SolutionIter<R> {
 }
 
 impl<R: Resolver> Iterator for SolutionIter<R> {
-    type Item = Vec<Option<ast::Term>>;
+    type Item = Solution;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -736,7 +763,8 @@ impl SolutionState {
 
 #[cfg(test)]
 mod tests {
-    use crate::search::{Resolver, SolutionIter};
+    use crate::ast::{Term, Var};
+    use crate::search::{Resolver, SolutionIter, Solution};
     use crate::textual::TextualUniverse;
 
     /// https://github.com/fatho/logru/issues/15
@@ -765,5 +793,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn solution_get() {
+        let solution = Solution(vec![None, Some(Term::Int(0))]);
+        assert_eq!(solution.get(Var::from_ord(1)), Some(&Term::Int(0)));
+        assert_eq!(
+            solution.iter_vars().collect::<Vec<_>>(),
+            vec![
+                (Var::from_ord(0), None),
+                (Var::from_ord(1), Some(&Term::Int(0))),
+            ],
+        );
     }
 }

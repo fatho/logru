@@ -4,7 +4,7 @@ use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Instant;
 
-use logru::ast::{Sym, Var, VarScope};
+use logru::ast::{Sym, VarScope};
 use logru::resolve::{ArithmeticResolver, ResolverExt};
 use logru::search::{query_dfs, Resolved, Resolver};
 use logru::term_arena::{AppTerm, ArgRange};
@@ -162,17 +162,13 @@ fn query(state: &mut AppState, args: &str) {
                     logru::search::Step::Yield => {
                         let solution = solutions.get_solution();
                         println!("Found solution:");
-                        for (index, var) in solution.into_iter().enumerate() {
-                            if let Some(name) = query
-                                .scope
-                                .as_ref()
-                                .and_then(|s| s.get_name(Var::from_ord(index)))
-                            {
+                        for (var, term) in solution.iter_vars() {
+                            if let Some(name) = query.scope.as_ref().and_then(|s| s.get_name(var)) {
                                 print!("  {} = ", name);
                             } else {
-                                print!("  _{} = ", index);
+                                print!("  _{} = ", var.ord());
                             }
-                            if let Some(term) = var {
+                            if let Some(term) = term {
                                 println!(
                                     "{}",
                                     state

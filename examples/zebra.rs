@@ -18,7 +18,7 @@ fn main() {
 
         for solution in solutions.iter() {
             if i == 0 {
-                for var in solution {
+                for var in solution.vars() {
                     if let Some(term) = var {
                         println!("{}", u.pretty().term_to_string(term, query.scope.as_ref()));
                     } else {

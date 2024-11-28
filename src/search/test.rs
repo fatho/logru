@@ -62,7 +62,10 @@ fn genealogy() {
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
-        vec![vec![Some(alice.into())], vec![Some(bob.into())],]
+        vec![
+            Solution(vec![Some(alice.into())]),
+            Solution(vec![Some(bob.into())]),
+        ]
     );
 
     // query all grandchildren of bob
@@ -72,7 +75,10 @@ fn genealogy() {
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
-        vec![vec![Some(eve.into())], vec![Some(faithe.into())],]
+        vec![
+            Solution(vec![Some(eve.into())]),
+            Solution(vec![Some(faithe.into())]),
+        ]
     );
 
     // query all siblings of eve
@@ -84,10 +90,10 @@ fn genealogy() {
         solutions.collect::<Vec<_>>(),
         vec![
             // one solution for each path taken
-            vec![Some(eve.into())],
-            vec![Some(faithe.into())],
-            vec![Some(eve.into())],
-            vec![Some(faithe.into())],
+            Solution(vec![Some(eve.into())]),
+            Solution(vec![Some(faithe.into())]),
+            Solution(vec![Some(eve.into())]),
+            Solution(vec![Some(faithe.into())]),
         ]
     );
 }
@@ -145,7 +151,10 @@ fn arithmetic() {
         &mut resolver,
         &exists(|[x]| Query::single_app(is_zero, vec![x.into()])),
     );
-    assert_eq!(solutions.collect::<Vec<_>>(), vec![vec![Some(z.into())],]);
+    assert_eq!(
+        solutions.collect::<Vec<_>>(),
+        vec![Solution(vec![Some(z.into())]),]
+    );
 
     // query the first natural numbers
     let solutions = query_dfs(
@@ -155,9 +164,9 @@ fn arithmetic() {
     assert_eq!(
         solutions.take(3).collect::<Vec<_>>(),
         vec![
-            vec![Some(z.into())],
-            vec![Some(ast::app(s, vec![z.into()]))],
-            vec![Some(ast::app(s, vec![ast::app(s, vec![z.into()])]))],
+            Solution(vec![Some(z.into())]),
+            Solution(vec![Some(ast::app(s, vec![z.into()]))]),
+            Solution(vec![Some(ast::app(s, vec![ast::app(s, vec![z.into()])]))]),
         ]
     );
 
@@ -177,10 +186,10 @@ fn arithmetic() {
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
-        vec![vec![Some(ast::app(
+        vec![Solution(vec![Some(ast::app(
             s,
             vec![ast::app(s, vec![ast::app(s, vec![z.into()])])]
-        ))],]
+        ))]),]
     );
 
     // compute 3 - 2
@@ -199,7 +208,7 @@ fn arithmetic() {
     );
     assert_eq!(
         solutions.collect::<Vec<_>>(),
-        vec![vec![Some(ast::app(s, vec![z.into()]))],]
+        vec![Solution(vec![Some(ast::app(s, vec![z.into()]))]),]
     );
 }
 
@@ -232,9 +241,11 @@ fn cut() {
         let pretty_solutions: Vec<_> = rets
             .into_iter()
             .map(|sol| {
-                sol.into_iter()
+                sol.vars()
+                    .iter()
                     .map(|var| {
-                        var.map(|term| tu.pretty().term_to_string(&term, query.scope.as_ref()))
+                        var.as_ref()
+                            .map(|term| tu.pretty().term_to_string(&term, query.scope.as_ref()))
                     })
                     .collect::<Vec<_>>()
             })

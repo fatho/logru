@@ -83,6 +83,7 @@
 //! ```
 //! # use logru::ast::{self, Rule};
 //! # use logru::resolve::RuleResolver;
+//! # use logru::search::Solution;
 //! # let mut syms = logru::SymbolStore::new();
 //! # let mut r = logru::RuleSet::new();
 //! # let s = syms.get_or_insert_named("s");
@@ -127,7 +128,7 @@
 //! // Sanity check that there is only one solution, and it is the expected one
 //! assert_eq!(
 //!     solutions.collect::<Vec<_>>(),
-//!     vec![vec![Some(ast::app(s, vec![z.into()]))],]
+//!     vec![Solution(vec![Some(ast::app(s, vec![z.into()]))]),]
 //! );
 //! ```
 //!

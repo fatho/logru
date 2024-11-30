@@ -764,7 +764,7 @@ impl SolutionState {
 #[cfg(test)]
 mod tests {
     use crate::ast::{Term, Var};
-    use crate::search::{Resolver, SolutionIter, Solution};
+    use crate::search::{Resolver, Solution, SolutionIter};
     use crate::textual::TextualUniverse;
 
     /// https://github.com/fatho/logru/issues/15

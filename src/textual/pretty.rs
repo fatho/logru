@@ -1,15 +1,16 @@
-use crate::ast::{AppTerm, Query, Rule, Term, VarScope};
-
-use super::SymbolStore;
+use crate::{
+    ast::{AppTerm, Query, Rule, Term, VarScope},
+    universe::Symbols,
+};
 
 /// A pretty-printer for terms using the Prolog-like syntax of the
 /// [TextualUniverse](super::TextualUniverse).
-pub struct Prettifier<'u> {
-    universe: &'u SymbolStore,
+pub struct Prettifier<'u, T: Symbols> {
+    universe: &'u T,
 }
 
-impl<'a> Prettifier<'a> {
-    pub fn new(universe: &'a SymbolStore) -> Self {
+impl<'a, T: Symbols> Prettifier<'a, T> {
+    pub fn new(universe: &'a T) -> Self {
         Self { universe }
     }
 

@@ -9,7 +9,7 @@ use logru::resolve::{ArithmeticResolver, ResolverExt};
 use logru::search::{query_dfs, Resolved, Resolver};
 use logru::term_arena::{AppTerm, ArgRange};
 use logru::textual::{Prettifier, TextualUniverse};
-use logru::SymbolStore;
+use logru::{SymbolStorage, SymbolStore};
 use rustyline::completion::Completer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
@@ -148,11 +148,11 @@ fn query(state: &mut AppState, args: &str) {
         Ok(query) => {
             let builtins = state
                 .commands
-                .as_resolver(&state.universe.symbols, query.scope.as_ref());
+                .as_resolver(&state.universe.symbols, query.query().scope.as_ref());
             let resolver = builtins
                 .or_else(&mut state.arithmetic)
                 .or_else(state.universe.resolver());
-            let mut solutions = query_dfs(resolver, &query);
+            let mut solutions = query_dfs(resolver, query.query());
             loop {
                 if state.interrupted.load(atomic::Ordering::SeqCst) {
                     println!("Interrupted!");
@@ -163,7 +163,9 @@ fn query(state: &mut AppState, args: &str) {
                         let solution = solutions.get_solution();
                         println!("Found solution:");
                         for (var, term) in solution.iter_vars() {
-                            if let Some(name) = query.scope.as_ref().and_then(|s| s.get_name(var)) {
+                            if let Some(name) =
+                                query.query().scope.as_ref().and_then(|s| s.get_name(var))
+                            {
                                 print!("  {} = ", name);
                             } else {
                                 print!("  _{} = ", var.ord());
@@ -174,7 +176,7 @@ fn query(state: &mut AppState, args: &str) {
                                     state
                                         .universe
                                         .pretty()
-                                        .term_to_string(&term, query.scope.as_ref())
+                                        .term_to_string(&term, query.query().scope.as_ref())
                                 );
                             } else {
                                 println!("<any>");

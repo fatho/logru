@@ -113,6 +113,7 @@ impl<'c> ResolveContext<'c> {
     }
 }
 
+#[derive(Debug)]
 pub enum Resolved<C> {
     /// The goal resolved to a single choice that was successfully applied to the state.
     Success,
@@ -284,6 +285,7 @@ impl<R: Resolver> SolutionIter<R> {
     /// # use logru::ast::{self, Rule};
     /// # use logru::resolve::RuleResolver;
     /// # use logru::search::Step;
+    /// # use logru::SymbolStorage;
     /// # let mut syms = logru::SymbolStore::new();
     /// # let mut r = logru::RuleSet::new();
     /// # let s = syms.get_or_insert_named("s");

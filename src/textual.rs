@@ -13,7 +13,7 @@ use crate::{
     ast::Query,
     resolve::RuleResolver,
     search::{self, SolutionIter},
-    universe::{RuleSet, SymbolStore},
+    universe::{RuleSet, SymbolOverlay, SymbolStore},
 };
 
 pub use self::{parser::Parser, pretty::Prettifier};
@@ -64,12 +64,12 @@ pub use self::{parser::Parser, pretty::Prettifier};
 /// .unwrap();
 ///
 /// let query = u.prepare_query("mul(X,X,Y).").unwrap();
-/// let solutions = query_dfs(u.resolver(), &query);
+/// let solutions = query_dfs(u.resolver(), query.query());
 /// for solution in solutions.take(5) {
 ///     println!("SOLUTION:");
 ///     for (var, term) in solution.iter_vars() {
 ///         if let Some(term) = term {
-///             println!("  ${} = {}", var.ord(), u.pretty().term_to_string(&term, query.scope.as_ref()));
+///             println!("  ${} = {}", var.ord(), u.pretty().term_to_string(&term, query.query().scope.as_ref()));
 ///         } else {
 ///             println!("<bug: no solution>");
 ///         }
@@ -100,8 +100,11 @@ impl TextualUniverse {
     }
 
     /// Parse a query, but do not run it.
-    pub fn prepare_query(&mut self, query: &str) -> Result<Query, ParseError> {
-        Parser::new(&mut self.symbols).parse_query_str(query)
+    pub fn prepare_query(&self, query: &str) -> Result<UniverseQuery<'_>, ParseError> {
+        let symbols = SymbolOverlay::new(&self.symbols);
+        let mut parser = Parser::new(symbols);
+        let query = parser.parse_query_str(query)?;
+        Ok(UniverseQuery::new(parser.into_symbols(), query))
     }
 
     /// Run a query against the universe using the DFS solver.
@@ -115,18 +118,21 @@ impl TextualUniverse {
     /// thus the pretty-printer is still accessible.
     pub fn query_dfs(&mut self, query: &str) -> Result<SolutionIter<RuleResolver>, ParseError> {
         let query = self.prepare_query(query)?;
-        Ok(search::query_dfs(RuleResolver::new(&self.rules), &query))
+        Ok(search::query_dfs(
+            RuleResolver::new(&self.rules),
+            query.query(),
+        ))
     }
 
     // //////////////////////////////// OTHER ACCESSORS ////////////////////////////////
 
     /// Return a pretty-printer using the symbols defined in this universe.
-    pub fn pretty(&self) -> Prettifier {
+    pub fn pretty(&self) -> Prettifier<SymbolStore> {
         Prettifier::new(&self.symbols)
     }
 
     /// Return a term parser that uses the name mapping of this universe for parsing terms.
-    pub fn parse(&mut self) -> Parser {
+    pub fn parse(&mut self) -> Parser<&mut SymbolStore> {
         Parser::new(&mut self.symbols)
     }
 
@@ -139,5 +145,29 @@ impl TextualUniverse {
 impl Default for TextualUniverse {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// A query tied to a particular universe through symbols
+pub struct UniverseQuery<'a> {
+    symbols: SymbolOverlay<'a>,
+    query: Query,
+}
+
+impl<'a> UniverseQuery<'a> {
+    pub fn new(symbols: SymbolOverlay<'a>, query: Query) -> Self {
+        Self { symbols, query }
+    }
+
+    pub fn query(&self) -> &Query {
+        &self.query
+    }
+
+    pub fn symbols(&self) -> &SymbolOverlay<'a> {
+        &self.symbols
+    }
+
+    pub fn symbols_mut(&mut self) -> &mut SymbolOverlay<'a> {
+        &mut self.symbols
     }
 }

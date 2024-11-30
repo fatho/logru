@@ -35,6 +35,7 @@
 //!
 //! ```
 //! use logru::ast::{self, Rule};
+//! use logru::SymbolStorage;
 //!
 //! let mut syms = logru::SymbolStore::new();
 //! let mut r = logru::RuleSet::new();
@@ -84,6 +85,7 @@
 //! # use logru::ast::{self, Rule};
 //! # use logru::resolve::RuleResolver;
 //! # use logru::search::Solution;
+//! # use logru::SymbolStorage;
 //! # let mut syms = logru::SymbolStore::new();
 //! # let mut r = logru::RuleSet::new();
 //! # let s = syms.get_or_insert_named("s");
@@ -154,4 +156,4 @@ pub mod universe;
 
 pub use resolve::RuleResolver;
 pub use search::query_dfs;
-pub use universe::{RuleSet, SymbolStore};
+pub use universe::{RuleSet, SymbolStorage, SymbolStore, Symbols};

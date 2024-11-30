@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use logos::{Logos, Span, SpannedIter};
 
 use crate::ast::{AppTerm, Query, Rule, Sym, Term, Var, VarScope};
-use crate::universe::SymbolStore;
+use crate::universe::SymbolStorage;
 
 use super::lexer::Token;
 
@@ -91,17 +91,21 @@ impl ParseErrorKind {
 
 /// A parser for terms using the Prolog-like syntax of the
 /// [TextualUniverse](super::TextualUniverse).
-pub struct Parser<'u> {
-    symbols: &'u mut SymbolStore,
+pub struct Parser<T: SymbolStorage> {
+    symbols: T,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(symbols: &'a mut SymbolStore) -> Self {
+impl<'a, T: SymbolStorage> Parser<T> {
+    pub fn new(symbols: T) -> Self {
         Self { symbols }
     }
 
-    // //////////////////////////////// PUBLIC PARSER ////////////////////////////////
+    /// The act of parsing creates a new set of symbols which correspond to the parsed queries. This extracts those symbols.
+    pub fn into_symbols(self) -> T {
+        self.symbols
+    }
 
+    // //////////////////////////////// PUBLIC PARSER ////////////////////////////////
     pub fn parse_query_str(&mut self, query: &str) -> Result<Query, ParseError> {
         let mut tokens = TokenStream::new(query);
         let mut scope = VarScope::new();
@@ -279,13 +283,17 @@ impl<'a> Parser<'a> {
 mod test {
     use super::super::pretty;
     use super::*;
+    use crate::universe::{SymbolOverlay, SymbolStore};
+
     fn query_roundtrip_test(input: &str) {
-        let mut nu = SymbolStore::new();
-        let mut p = Parser::new(&mut nu);
+        let mut ss = SymbolStore::new();
+        let nu = SymbolOverlay::new(&mut ss);
+        let mut p = Parser::new(nu);
 
         let q = p.parse_query_str(input).unwrap();
 
-        let pretty = pretty::Prettifier::new(&nu);
+        let symbols = p.into_symbols();
+        let pretty = pretty::Prettifier::new(&symbols);
         let qs = pretty.query_to_string(&q);
         assert_eq!(qs, input);
     }

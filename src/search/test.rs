@@ -1,6 +1,6 @@
 use super::*;
 use crate::textual::TextualUniverse;
-use crate::{ast::*, RuleResolver, RuleSet, SymbolStore};
+use crate::{ast::*, RuleResolver, RuleSet, SymbolStorage, SymbolStore};
 
 #[test]
 fn genealogy() {
@@ -237,15 +237,17 @@ fn cut() {
     #[track_caller]
     fn assert_solutions(tu: &mut TextualUniverse, query: &str, solutions: &[&[Option<&str>]]) {
         let query = tu.prepare_query(query).unwrap();
-        let rets: Vec<_> = query_dfs(tu.resolver(), &query).collect();
+        let rets: Vec<_> = query_dfs(tu.resolver(), query.query()).collect();
         let pretty_solutions: Vec<_> = rets
             .into_iter()
             .map(|sol| {
                 sol.vars()
                     .iter()
                     .map(|var| {
-                        var.as_ref()
-                            .map(|term| tu.pretty().term_to_string(&term, query.scope.as_ref()))
+                        var.as_ref().map(|term| {
+                            tu.pretty()
+                                .term_to_string(&term, query.query().scope.as_ref())
+                        })
                     })
                     .collect::<Vec<_>>()
             })

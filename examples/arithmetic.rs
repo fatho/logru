@@ -7,7 +7,7 @@ fn main() {
         .unwrap();
 
     let query = u.prepare_query("mul(A,A,B).").unwrap();
-    let solutions = query_dfs(u.resolver(), &query);
+    let solutions = query_dfs(u.resolver(), query.query());
 
     for solution in solutions.take(10) {
         println!("SOLUTION:");
@@ -16,7 +16,8 @@ fn main() {
                 println!(
                     "  ${} = {}",
                     var.ord(),
-                    u.pretty().term_to_string(&term, query.scope.as_ref())
+                    u.pretty()
+                        .term_to_string(&term, query.query().scope.as_ref())
                 );
             } else {
                 println!("<bug: no solution>");

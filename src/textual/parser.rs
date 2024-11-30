@@ -291,7 +291,7 @@ mod test {
     }
 
     #[test]
-    fn test_query_parsing() {
+    fn query_parsing() {
         query_roundtrip_test("grandparent(bob, X).");
         query_roundtrip_test("grandparent(bob, X), female(X).");
 
@@ -309,14 +309,14 @@ mod test {
     }
 
     #[test]
-    fn test_rule_parsing() {
+    fn rule_parsing() {
         rule_roundtrip_test("is_natural(z).");
         rule_roundtrip_test("is_natural(s(X)) :- is_natural(X).");
         rule_roundtrip_test("grandparent(X, Y) :- parent(X, Z), parent(Z, Y).");
     }
 
     #[test]
-    fn test_comment_parsing() {
+    fn comment_parsing() {
         let mut nu = SymbolStore::new();
         let mut p = Parser::new(&mut nu);
         let with_comment = p.parse_rule_str("foo. % example comment").unwrap();

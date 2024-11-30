@@ -19,3 +19,5 @@ jobs:
       run: cargo test --verbose
     - name: Check documentation
       run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --document-private-items --examples --bins --lib
+    - name: Check formatting
+      run: cargo fmt --check

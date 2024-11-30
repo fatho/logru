@@ -276,72 +276,75 @@ impl<'a> Parser<'a> {
 }
 
 #[cfg(test)]
-fn query_roundtrip_test(input: &str) {
-    let mut nu = SymbolStore::new();
-    let mut p = Parser::new(&mut nu);
+mod test {
+    use super::super::pretty;
+    use super::*;
+    fn query_roundtrip_test(input: &str) {
+        let mut nu = SymbolStore::new();
+        let mut p = Parser::new(&mut nu);
 
-    let q = p.parse_query_str(input).unwrap();
+        let q = p.parse_query_str(input).unwrap();
 
-    let pretty = super::pretty::Prettifier::new(&nu);
-    let qs = pretty.query_to_string(&q);
-    assert_eq!(qs, input);
-}
+        let pretty = pretty::Prettifier::new(&nu);
+        let qs = pretty.query_to_string(&q);
+        assert_eq!(qs, input);
+    }
 
-#[test]
-fn test_query_parsing() {
-    query_roundtrip_test("grandparent(bob, X).");
-    query_roundtrip_test("grandparent(bob, X), female(X).");
+    #[test]
+    fn test_query_parsing() {
+        query_roundtrip_test("grandparent(bob, X).");
+        query_roundtrip_test("grandparent(bob, X), female(X).");
 
-    query_roundtrip_test("add(s(s(s(s(z)))), s(s(z)), X).");
-}
+        query_roundtrip_test("add(s(s(s(s(z)))), s(s(z)), X).");
+    }
 
-#[cfg(test)]
-fn rule_roundtrip_test(input: &str) {
-    let mut nu = SymbolStore::new();
-    let mut p = Parser::new(&mut nu);
-    let q = p.parse_rule_str(input).unwrap();
+    fn rule_roundtrip_test(input: &str) {
+        let mut nu = SymbolStore::new();
+        let mut p = Parser::new(&mut nu);
+        let q = p.parse_rule_str(input).unwrap();
 
-    let pretty = super::pretty::Prettifier::new(&nu);
-    let qs = pretty.rule_to_string(&q);
-    assert_eq!(qs, input);
-}
+        let pretty = pretty::Prettifier::new(&nu);
+        let qs = pretty.rule_to_string(&q);
+        assert_eq!(qs, input);
+    }
 
-#[test]
-fn test_rule_parsing() {
-    rule_roundtrip_test("is_natural(z).");
-    rule_roundtrip_test("is_natural(s(X)) :- is_natural(X).");
-    rule_roundtrip_test("grandparent(X, Y) :- parent(X, Z), parent(Z, Y).");
-}
+    #[test]
+    fn test_rule_parsing() {
+        rule_roundtrip_test("is_natural(z).");
+        rule_roundtrip_test("is_natural(s(X)) :- is_natural(X).");
+        rule_roundtrip_test("grandparent(X, Y) :- parent(X, Z), parent(Z, Y).");
+    }
 
-#[test]
-fn test_comment_parsing() {
-    let mut nu = SymbolStore::new();
-    let mut p = Parser::new(&mut nu);
-    let with_comment = p.parse_rule_str("foo. % example comment").unwrap();
-    let no_comment = p.parse_rule_str("foo.").unwrap();
-    assert_eq!(with_comment, no_comment);
-    let with_comment = p.parse_rule_str("foo. % bar.").unwrap();
-    assert_eq!(with_comment, no_comment);
+    #[test]
+    fn test_comment_parsing() {
+        let mut nu = SymbolStore::new();
+        let mut p = Parser::new(&mut nu);
+        let with_comment = p.parse_rule_str("foo. % example comment").unwrap();
+        let no_comment = p.parse_rule_str("foo.").unwrap();
+        assert_eq!(with_comment, no_comment);
+        let with_comment = p.parse_rule_str("foo. % bar.").unwrap();
+        assert_eq!(with_comment, no_comment);
 
-    let no_comment = p
-        .parse_rules_str(
-            "foo.
-bar.",
-        )
-        .unwrap();
-    let with_comment = p
-        .parse_rules_str(
-            "foo. % comment
-bar.",
-        )
-        .unwrap();
-    assert_eq!(with_comment, no_comment);
-    let with_comment = p
-        .parse_rules_str(
-            "%comment
-foo.
-bar.",
-        )
-        .unwrap();
-    assert_eq!(with_comment, no_comment);
+        let no_comment = p
+            .parse_rules_str(
+                "foo.
+    bar.",
+            )
+            .unwrap();
+        let with_comment = p
+            .parse_rules_str(
+                "foo. % comment
+    bar.",
+            )
+            .unwrap();
+        assert_eq!(with_comment, no_comment);
+        let with_comment = p
+            .parse_rules_str(
+                "%comment
+    foo.
+    bar.",
+            )
+            .unwrap();
+        assert_eq!(with_comment, no_comment);
+    }
 }

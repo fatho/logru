@@ -36,8 +36,8 @@ where
     T: SymbolStorage,
 {
     fn get_or_insert_named(&mut self, name: &str) -> Sym {
-        let this: &mut T = *self; // Specify the concrete type to call to avoid accidentally recursing back into this method and creating an infinite loop.
-        this.get_or_insert_named(name)
+        // The deref is important so that we call the impl for `T`, and not `Self`.
+        (*self).get_or_insert_named(name)
     }
 }
 
@@ -122,7 +122,7 @@ impl Symbols for SymbolStore {
     }
 }
 
-impl<'a> SymbolStorage for SymbolStore {
+impl SymbolStorage for SymbolStore {
     /// Return the symbol associated with the name, or allocate a fresh ID and associate it with the
     /// given name.
     fn get_or_insert_named(&mut self, name: &str) -> Sym {

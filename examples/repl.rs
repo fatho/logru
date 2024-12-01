@@ -176,7 +176,7 @@ fn query(state: &mut AppState, args: &str) {
                                     state
                                         .universe
                                         .pretty()
-                                        .term_to_string(&term, query.query().scope.as_ref())
+                                        .term_to_string(term, query.query().scope.as_ref())
                                 );
                             } else {
                                 println!("<any>");

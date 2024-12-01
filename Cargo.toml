@@ -1,6 +1,6 @@
 [package]
 name = "logru"
-version = "0.3.0"
+version = "0.4.0"
 description = "A small, embeddable and fast interpreter for a subset of Prolog."
 keywords = ["prolog", "logic-programming", "first-order-logic"]
 categories = ["compilers", "algorithms", "mathematics"]
@@ -15,12 +15,12 @@ include = ["README.md", "testfiles/*", "**/*.rs", "Cargo.toml"]
 logos = "0.14.2"
 
 [dev-dependencies]
-criterion = { version = "0.5.1", features = ["html_reports"] }
-ctrlc = "3.4.5"
-dirs = "5.0.1"
-rustyline = "15.0.0"
-tracing = "0.1.40"
-tracing-subscriber = "0.3.18"
+criterion = { version = "0.5", features = ["html_reports"] }
+ctrlc = "3.4"
+dirs = "5.0"
+rustyline = "15.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
 [profile.release]
 debug = true

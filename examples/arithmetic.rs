@@ -17,7 +17,7 @@ fn main() {
                     "  ${} = {}",
                     var.ord(),
                     u.pretty()
-                        .term_to_string(&term, query.query().scope.as_ref())
+                        .term_to_string(term, query.query().scope.as_ref())
                 );
             } else {
                 println!("<bug: no solution>");

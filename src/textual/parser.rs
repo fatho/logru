@@ -95,7 +95,7 @@ pub struct Parser<T: SymbolStorage> {
     symbols: T,
 }
 
-impl<'a, T: SymbolStorage> Parser<T> {
+impl<T: SymbolStorage> Parser<T> {
     pub fn new(symbols: T) -> Self {
         Self { symbols }
     }
@@ -286,8 +286,8 @@ mod test {
     use crate::universe::{SymbolOverlay, SymbolStore};
 
     fn query_roundtrip_test(input: &str) {
-        let mut ss = SymbolStore::new();
-        let nu = SymbolOverlay::new(&mut ss);
+        let ss = SymbolStore::new();
+        let nu = SymbolOverlay::new(&ss);
         let mut p = Parser::new(nu);
 
         let q = p.parse_query_str(input).unwrap();

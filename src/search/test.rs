@@ -246,7 +246,7 @@ fn cut() {
                     .map(|var| {
                         var.as_ref().map(|term| {
                             tu.pretty()
-                                .term_to_string(&term, query.query().scope.as_ref())
+                                .term_to_string(term, query.query().scope.as_ref())
                         })
                     })
                     .collect::<Vec<_>>()

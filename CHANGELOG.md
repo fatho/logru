@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.3 - 2024-11-24
+## v0.4.0 - 2024-12-01
+
+Many thanks to [@dcz-self](https://github.com/dcz-self) for a bunch of contributions!
+
+New features:
+- The textual language now supports line comments with `%` ([#26](https://github.com/fatho/logru/pull/26))
+- `VarScope`s now provide additional functions to inspect the variables in the scope ([#23](https://github.com/fatho/logru/pull/23))
+- `TextualUniverse` is now captured immutably by prepared queries, so that multiple queries can be run concurrently against the universe ([#27](https://github.com/fatho/logru/pull/27))
+
+Breaking changes:
+- `SolutionIter` now returns `Solution`s rather than `Vec<_>`s, making it easier to relate goal variables to solution terms ([#25](https://github.com/fatho/logru/pull/25))
+- The concrete symbol storage used by e.g. the parser and some resolvers is now abstracted behind a `SymbolStorage` trait (as part of the works for [#27](https://github.com/fatho/logru/pull/27))
+
+
+## v0.3.0 - 2024-11-24
 
 New features:
 - Named variables and wildcards ([#14](https://github.com/fatho/logru/pull/14))
@@ -22,6 +36,7 @@ Bug fixes:
 - Occurs check did not follow bound variables (fixed in
   [#16](https://github.com/fatho/logru/pull/16))
 
-## 0.2 - 2021-10-13
+
+## v0.2.0 - 2021-10-13
 
 Initial release

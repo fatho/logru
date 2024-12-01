@@ -171,13 +171,7 @@ fn query(state: &mut AppState, args: &str) {
                                 print!("  _{} = ", var.ord());
                             }
                             if let Some(term) = term {
-                                println!(
-                                    "{}",
-                                    state
-                                        .universe
-                                        .pretty()
-                                        .term_to_string(term, query.query().scope.as_ref())
-                                );
+                                println!("{}", query.pretty().term_to_string(term));
                             } else {
                                 println!("<any>");
                             }

@@ -13,12 +13,7 @@ fn main() {
         println!("SOLUTION:");
         for (var, term) in solution.iter_vars() {
             if let Some(term) = term {
-                println!(
-                    "  ${} = {}",
-                    var.ord(),
-                    u.pretty()
-                        .term_to_string(term, query.query().scope.as_ref())
-                );
+                println!("  ${} = {}", var.ord(), query.pretty().term_to_string(term));
             } else {
                 println!("<bug: no solution>");
             }

@@ -20,11 +20,7 @@ fn main() {
             if i == 0 {
                 for var in solution.vars() {
                     if let Some(term) = var {
-                        println!(
-                            "{}",
-                            u.pretty()
-                                .term_to_string(term, query.query().scope.as_ref())
-                        );
+                        println!("{}", query.pretty().term_to_string(term));
                     } else {
                         println!("<bug: no solution>");
                     }

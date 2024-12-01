@@ -8,6 +8,7 @@ mod parser;
 mod pretty;
 
 pub use parser::{ParseError, ParseErrorKind};
+use pretty::ScopedPrettifier;
 
 use crate::{
     ast::Query,
@@ -69,7 +70,7 @@ pub use self::{parser::Parser, pretty::Prettifier};
 ///     println!("SOLUTION:");
 ///     for (var, term) in solution.iter_vars() {
 ///         if let Some(term) = term {
-///             println!("  ${} = {}", var.ord(), u.pretty().term_to_string(&term, query.query().scope.as_ref()));
+///             println!("  ${} = {}", var.ord(), query.pretty().term_to_string(&term));
 ///         } else {
 ///             println!("<bug: no solution>");
 ///         }
@@ -169,5 +170,11 @@ impl<'a> UniverseQuery<'a> {
 
     pub fn symbols_mut(&mut self) -> &mut SymbolOverlay<'a> {
         &mut self.symbols
+    }
+
+    /// Return a pretty-printer using the symbols defined in this query.
+    /// As opposed to TextualUniverse::pretty, this one won't allow any mixups between the sources of the universe and the variables.
+    pub fn pretty(&self) -> ScopedPrettifier<SymbolOverlay> {
+        ScopedPrettifier::new(&self.symbols, self.query().scope.as_ref())
     }
 }

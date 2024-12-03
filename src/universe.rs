@@ -143,7 +143,7 @@ impl Default for SymbolStore {
 }
 
 /// Stores and allocates unique symbols on top of a symbol store, without modifying it.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SymbolOverlay<'a> {
     symbols: &'a SymbolStore,
     // Sym entries stored here start at 0, but get translated on the API boundary to start at symbols.num_symbols().

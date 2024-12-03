@@ -163,12 +163,17 @@ impl ArithmeticResolver {
         let [left, right] = context.solution().terms().get_args_fixed(args)?;
         // Right must be fully instantiated and evaluate to integer formula
         let right_val = self.eval_exp(context.solution(), right)?;
-        // Left must be variable or integer
-        let (_left_id, left_term) = context.solution().follow_vars(left);
-        match left_term {
-            Term::Int(left_val) => op(left_val, right_val).then_some(Resolved::Success),
-            // TODO: log invalid terms
-            _ => None,
+        // Left can be fully instantiated and evaluate to integer formula
+        if let Some(left_val) = self.eval_exp(context.solution(), left) {
+            op(left_val, right_val).then_some(Resolved::Success)
+        } else {
+            // Left must be variable or integer
+            let (_left_id, left_term) = context.solution().follow_vars(left);
+            match left_term {
+                Term::Int(left_val) => op(left_val, right_val).then_some(Resolved::Success),
+                // TODO: log invalid terms
+                _ => None,
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::convert::TryInto;
 
-use crate::ast::Sym;
+use crate::ast::{Sym, Var};
 use crate::search::{Resolved, Resolver, SolutionState};
 use crate::term_arena::{AppTerm, ArgRange, Term, TermId};
 use crate::universe::SymbolStorage;
@@ -55,7 +55,15 @@ impl ArithmeticResolver {
             ("rem", Exp::Rem),
             ("pow", Exp::Pow),
         ];
-        let preds = [("is", Pred::Is)];
+        let preds = [
+            ("is", Pred::Is),
+            ("isLess", Pred::IsLess),
+            ("isGreater", Pred::IsGreater),
+            ("isLessEq", Pred::IsLessEq),
+            ("isGreaterEq", Pred::IsGreaterEq),
+            ("isDivider", Pred::IsDivider),
+            ("isNeg", Pred::IsNeg),
+        ];
         Self {
             exp_map: symbols.build_sym_map(exps),
             pred_map: symbols.build_sym_map(preds),
@@ -93,7 +101,7 @@ impl ArithmeticResolver {
         &mut self,
         args: ArgRange,
         context: &mut crate::search::ResolveContext,
-    ) -> Option<Resolved<()>> {
+    ) -> Option<Resolved<(Var, i64)>> {
         let [left, right] = context.solution().terms().get_args_fixed(args)?;
         // Right must be fully instantiated and evaluate to integer formula
         let right_val = self.eval_exp(context.solution(), right)?;
@@ -114,6 +122,55 @@ impl ArithmeticResolver {
             _ => None,
         }
     }
+
+    fn resolve_neg(
+        &mut self,
+        args: ArgRange,
+        context: &mut crate::search::ResolveContext,
+    ) -> Option<Resolved<(Var, i64)>> {
+        let [left, right] = context.solution().terms().get_args_fixed(args)?;
+        // Right must be fully instantiated and evaluate to integer formula
+        let right_val = self.eval_exp(context.solution(), right)?;
+
+        // Left must be variable or integer
+        let (_left_id, left_term) = context.solution().follow_vars(left);
+        match left_term {
+            Term::Var(var) => {
+                match right_val.checked_neg() {
+                    None => None,
+                    Some(value) => {
+                        // Allocate result and assign to unbound variable
+                        let result_term = context.solution_mut().terms_mut().int(value);
+                        context
+                            .solution_mut()
+                            .set_var(var, result_term)
+                            .then_some(Resolved::Success)
+                    },
+                }
+            }
+            Term::Int(left_val) => (left_val == -right_val).then_some(Resolved::Success),
+            // TODO: log invalid terms
+            _ => None,
+        }
+    }
+    
+    fn resolve_instantiated_op2(
+        &mut self,
+        args: ArgRange,
+        context: &mut crate::search::ResolveContext,
+        op: fn(i64, i64) -> bool,
+    ) -> Option<Resolved<(Var, i64)>> {
+        let [left, right] = context.solution().terms().get_args_fixed(args)?;
+        // Right must be fully instantiated and evaluate to integer formula
+        let right_val = self.eval_exp(context.solution(), right)?;
+        // Left must be variable or integer
+        let (_left_id, left_term) = context.solution().follow_vars(left);
+        match left_term {
+            Term::Int(left_val) => op(left_val, right_val).then_some(Resolved::Success),
+            // TODO: log invalid terms
+            _ => None,
+        }
+    }
 }
 
 enum Exp {
@@ -127,11 +184,16 @@ enum Exp {
 
 enum Pred {
     Is,
+    IsLess,
+    IsGreater,
+    IsLessEq,
+    IsGreaterEq,
+    IsDivider,
+    IsNeg,
 }
 
 impl Resolver for ArithmeticResolver {
-    /// The arithmetic resolver provides no choice.
-    type Choice = ();
+    type Choice = (Var, i64); // the largest number
 
     fn resolve(
         &mut self,
@@ -142,6 +204,12 @@ impl Resolver for ArithmeticResolver {
         let pred = self.pred_map.get(&sym)?;
         match pred {
             Pred::Is => self.resolve_is(args, context),
+            Pred::IsLess => self.resolve_instantiated_op2(args, context, |a, b| a < b),
+            Pred::IsGreater => self.resolve_instantiated_op2(args, context, |a, b| a > b),
+            Pred::IsLessEq => self.resolve_instantiated_op2(args, context, |a, b| a <= b),
+            Pred::IsGreaterEq => self.resolve_instantiated_op2(args, context, |a, b| a >= b),
+            Pred::IsDivider => self.resolve_instantiated_op2(args, context, |a, b| a % b == 0),
+            Pred::IsNeg => self.resolve_neg(args, context),
         }
     }
 

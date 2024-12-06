@@ -243,12 +243,7 @@ fn cut() {
             .map(|sol| {
                 sol.vars()
                     .iter()
-                    .map(|var| {
-                        var.as_ref().map(|term| {
-                            tu.pretty()
-                                .term_to_string(term, query.query().scope.as_ref())
-                        })
-                    })
+                    .map(|var| var.as_ref().map(|term| query.pretty().term_to_string(term)))
                     .collect::<Vec<_>>()
             })
             .collect();

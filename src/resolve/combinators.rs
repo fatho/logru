@@ -24,13 +24,14 @@ impl<R: Resolver> ResolverExt for R {}
 
 /// A resolver that first tries to resolve a goal with the first resolver, and if that fails,
 /// resorts to the second resolver.
+#[derive(Clone)]
 pub struct OrElse<R1, R2> {
     pub first: R1,
     pub second: R2,
 }
 
 /// A choice between two choices. Used by the [`OrElse`] resolver.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum OrElseChoice<C1, C2> {
     First(C1),
     Second(C2),

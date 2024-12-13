@@ -40,6 +40,7 @@ use crate::universe::SymbolStorage;
 ///   ```prolog
 ///   is(4, add(1, 2)).
 ///   ```
+#[derive(Clone)]
 pub struct ArithmeticResolver {
     exp_map: HashMap<Sym, Exp>,
     pred_map: HashMap<Sym, Pred>,
@@ -116,6 +117,7 @@ impl ArithmeticResolver {
     }
 }
 
+#[derive(Clone)]
 enum Exp {
     Add,
     Sub,
@@ -125,6 +127,7 @@ enum Exp {
     Pow,
 }
 
+#[derive(Clone)]
 enum Pred {
     Is,
 }

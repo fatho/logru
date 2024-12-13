@@ -4,7 +4,7 @@ use crate::universe::CompiledRule;
 use crate::{term_arena, RuleSet};
 
 /// A goal resolver that uses a user-defined [`RuleSet`] for resolving goals.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RuleResolver<'a> {
     rules: &'a RuleSet,
 }

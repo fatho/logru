@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.1 - 2024-12-23
+
+Thanks to [@dcz-self](https://github.com/dcz-self) again for a bunch of contributions!
+
+Changes:
+- Addition of `ScopedPrettifier` as convenience wrapper to prettify solutions associated with `UniverseQuery`s ([#31](https://github.com/fatho/logru/pull/31))
+- Addition of a few helpful clone instances ([#33](https://github.com/fatho/logru/pull/33), [#34](https://github.com/fatho/logru/pull/34))
+
 ## v0.4.0 - 2024-12-01
 
 Many thanks to [@dcz-self](https://github.com/dcz-self) for a bunch of contributions!

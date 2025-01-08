@@ -147,6 +147,11 @@
 //!
 //!
 
+// Test examples from README.md.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
+
 pub mod ast;
 pub mod resolve;
 pub mod search;

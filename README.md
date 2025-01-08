@@ -28,7 +28,7 @@ pre-defined facts and rules, e.g. for [Peano arithmetic](testfiles/arithmetic.lr
 
 ```
 #===================#
-# LogRu REPL v0.1.0 #
+# LogRu REPL v0.4.1 #
 #===================#
 
 ?- :load testfiles/arithmetic.lru
@@ -117,7 +117,7 @@ arithmetic](https://en.wikipedia.org/wiki/Peano_axioms#Addition) can be defined 
 let mut syms = logru::SymbolStore::new();
 let mut r = logru::RuleSet::new();
 
-// Obtain IDs for t he symbols we want to use in our terms.
+// Obtain IDs for the symbols we want to use in our terms.
 // The order of these calls doesn't matter.
 let s = syms.get_or_insert_named("s");
 let z = syms.get_or_insert_named("z");

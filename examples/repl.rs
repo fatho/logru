@@ -18,11 +18,13 @@ use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Editor, Helper};
 
-const HEADER: &str = "
-#===================#
-# LogRu REPL v0.1.0 #
-#===================#
-";
+const HEADER: &str = concat!(
+    "#===================#\n",
+    "# LogRu REPL v",
+    env!("CARGO_PKG_VERSION"),
+    " #\n",
+    "#===================#\n"
+);
 
 fn main() {
     // install global collector configured based on RUST_LOG env var.

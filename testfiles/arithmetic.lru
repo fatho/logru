@@ -6,4 +6,4 @@ add(X, z, X) :- is_natural(X).
 add(X, s(Y), s(Z)) :- add(X, Y, Z).
 
 mul(X, z, z) :- is_natural(X).
-mul(X, s(Y), Z) :- mul(X,Y,W), add(X,W,Z).
+mul(X, s(Y), Z) :- mul(X, Y, W), add(X, W, Z).

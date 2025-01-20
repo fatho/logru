@@ -26,9 +26,9 @@ Features that are implemented:
 In the REPL you can quickly get started by loading one of the provided test files with some
 pre-defined facts and rules, e.g. for [Peano arithmetic](testfiles/arithmetic.lru):
 
-```
+```text
 #===================#
-# LogRu REPL v0.1.0 #
+# LogRu REPL v0.4.1 #
 #===================#
 
 ?- :load testfiles/arithmetic.lru
@@ -37,7 +37,7 @@ Loaded!
 
 We can then ask it to solve 2 + 3 (and find the correct answer 5):
 
-```
+```text
 ?- add(s(s(z)), s(s(s(z))), X).
 Found solution:
   X = s(s(s(s(s(z)))))
@@ -46,7 +46,7 @@ No more solutions.
 
 It is also possible to enumerate all pairs of terms that add up to five:
 
-```
+```text
 ?- add(X, Y, s(s(s(s(s(z)))))).
 Found solution:
   X = s(s(s(s(s(z)))))
@@ -72,14 +72,14 @@ No more solutions.
 While there is no standard library, using the cut operation, it is possible to build many of the
 common combinators, such as `once`:
 
-```
+```text
 ?- :define once(X) :- X, !.
 Defined!
 ```
 
 Given a predicate producing multiple choices...
 
-```
+```text
 ?- :define foo(hello). foo(world).
 Defined!
 ?- foo(X).
@@ -92,7 +92,7 @@ No more solutions.
 
 ..., we can now restrict it to produce only the first choice:
 
-```
+```text
 ?- once(foo(X)).
 Found solution:
   X = hello
@@ -114,10 +114,18 @@ hold all known facts and rules. A few simple rules for [Peano
 arithmetic](https://en.wikipedia.org/wiki/Peano_axioms#Addition) can be defined like this:
 
 ```rust
+use logru::{
+    ast::{self, exists, Query, Rule},
+    query_dfs,
+    resolve::RuleResolver,
+    search::Solution,
+    SymbolStorage,
+};
+
 let mut syms = logru::SymbolStore::new();
 let mut r = logru::RuleSet::new();
 
-// Obtain IDs for t he symbols we want to use in our terms.
+// Obtain IDs for the symbols we want to use in our terms.
 // The order of these calls doesn't matter.
 let s = syms.get_or_insert_named("s");
 let z = syms.get_or_insert_named("z");
@@ -131,8 +139,7 @@ r.insert(Rule::fact(is_natural, vec![z.into()]));
 // Define the rule `is_natural(s(P)) :- is_natural(P)`, i.e. that
 // the successor of P is a natural number if P is also a natural number.
 r.insert(ast::forall(|[p]| {
-    Rule::fact(is_natural, vec![ast::app(s, vec![p.into()])])
-    .when(is_natural, vec![p.into()])
+    Rule::fact(is_natural, vec![ast::app(s, vec![p.into()])]).when(is_natural, vec![p.into()])
 }));
 
 // Now we define a predicate for addition that we'll call add.
@@ -142,8 +149,7 @@ r.insert(ast::forall(|[p]| {
 // adding zero to P is P if P is a natural number.
 // This is the base case of Peano addition.
 r.insert(ast::forall(|[p]| {
-    Rule::fact(add, vec![p.into(), z.into(), p.into()])
-    .when(is_natural, vec![p.into()])
+    Rule::fact(add, vec![p.into(), z.into(), p.into()]).when(is_natural, vec![p.into()])
 }));
 
 // Finally, define the rule `add(P, s(Q), s(R)) :- add(P, Q, R)`,
@@ -159,16 +165,16 @@ r.insert(ast::forall(|[p, q, r]| {
     )
     .when(add, vec![p.into(), q.into(), r.into()])
 }));
-```
 
-We can now ask the solver to prove statements within this universe, e.g. that "there exists an X
-such that X + 2 = 3". This statement is indeed true for X = 1, and indeed, the solver will provide
-this answer:
+// We can now ask the solver to prove statements within this universe, e.g. that "there exists an X
+// such that X + 2 = 3". This statement is indeed true for X = 1, and indeed, the solver will provide
+// this answer:
 
-```rust
+let mut r = RuleResolver::new(&r);
+
 // Obtain an iterator that allows us to exhaustively search the solution space:
 let solutions = query_dfs(
-    &r,
+    &mut r,
     &exists(|[x]| {
         Query::single_app(
             add,
@@ -180,10 +186,11 @@ let solutions = query_dfs(
         )
     }),
 );
+
 // Sanity check
 assert_eq!(
     solutions.collect::<Vec<_>>(),
-    vec![vec![Some(ast::app(s, vec![z.into()]))],]
+    vec![Solution(vec![Some(ast::app(s, vec![z.into()]))])],
 );
 ```
 
@@ -218,7 +225,7 @@ in ~23ms.
 Although even with the occurs check enabled, SWI Prolog is only a few milliseconds slower, so there
 are likely other optimizations at play, too.
 
-```
+```text
 ?- :load testfiles/zebra-reverse.lru
 Loaded!
 ?- :time puzzle($0).
@@ -228,7 +235,7 @@ No more solutions.
 Took 0.0603s
 ```
 
-```
+```text
 ?- consult('testfiles/zebra-reverse.lru').
 true.
 
@@ -237,7 +244,6 @@ true.
 Houses = list(house(yellow, norway, water, diplomat, fox), house(blue, italy, tea, physician, horse), house(red, england, milk, photographer, snails), house(white, spain, juice, violinist, dog), house(green, japan, coffee, painter, zebra)) ;
 % 22,610 inferences, 0.004 CPU in 0.004 seconds (100% CPU, 6459533 Lips)
 false.
-
 ```
 
 

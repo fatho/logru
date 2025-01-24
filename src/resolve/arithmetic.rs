@@ -101,14 +101,35 @@ impl ArithmeticResolver {
 
         // Left must be variable or integer
         let (_left_id, left_term) = context.solution().follow_vars(left);
-        match left_term {
+        match dbg!(left_term) {
             Term::Var(var) => {
-                // Allocate result and assign to unbound variable
-                let result_term = context.solution_mut().terms_mut().int(right_val);
-                context
-                    .solution_mut()
-                    .set_var(var, result_term)
-                    .then_some(Resolved::Success)
+                let prev_constraint = context
+                    .solution()
+                    .get_var_constraint(var)
+                    .map(|term_id| context.solution().terms().get_term(term_id));
+
+                    // TODO: constrain to fully resolved
+                    // TODO: this is way too verbose for what it does
+                let new_term = if let Some(Term::Constraint(prev_constraint)) = prev_constraint {
+                    if right_val < prev_constraint {
+                        Some(right_val)
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(right_val)
+                };
+
+                if let Some(new_term) = new_term {
+                    // Allocate result and assign to unbound variable
+                    let result_term = context.solution_mut().terms_mut().constraint(new_term);
+                    context
+                        .solution_mut()
+                        .set_var_constraint(var, result_term)
+                        .then_some(Resolved::Success)
+                } else {
+                    Some(Resolved::Success)
+                }
             }
             Term::Int(left_val) => (left_val == right_val).then_some(Resolved::Success),
             // TODO: log invalid terms
@@ -127,7 +148,7 @@ enum Exp {
     Pow,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Pred {
     Is,
 }
@@ -142,9 +163,9 @@ impl Resolver for ArithmeticResolver {
         AppTerm(sym, args): crate::term_arena::AppTerm,
         context: &mut crate::search::ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
-        let pred = self.pred_map.get(&sym)?;
+        let pred = self.pred_map.get(dbg!(&sym))?;
         match pred {
-            Pred::Is => self.resolve_is(args, context),
+            Pred::Is => self.resolve_is(dbg!(args), context),
         }
     }
 

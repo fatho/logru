@@ -590,6 +590,8 @@ impl SolutionState {
                 // Primitive values cannot contain variables
                 term_arena::Term::Int(_) => {}
                 term_arena::Term::Cut => {}
+                // Constraints can't contain variables
+                term_arena::Term::Constraint(_) => {}
             }
             match self.occurs_stack.pop() {
                 // More terms to check
@@ -634,6 +636,7 @@ impl SolutionState {
             term_arena::Term::App(app) => ast::Term::App(self.extract_app_term(app)),
             term_arena::Term::Int(i) => ast::Term::Int(i),
             term_arena::Term::Cut => ast::Term::Cut,
+            term_arena::Term::Constraint(i) => ast::Term::Constraint(i),
         }
     }
 
@@ -692,8 +695,10 @@ impl SolutionState {
         let (goal_term_id, goal_term) = self.follow_vars(goal_term);
         let (rule_term_id, rule_term) = self.follow_vars(rule_term);
 
+        dbg!(self.extract_term(goal_term_id));
+        dbg!(self.extract_term(rule_term_id));
         // Step 2: the actual unification
-        match (goal_term, rule_term) {
+        let x = match (goal_term, rule_term) {
             // variable with variable
             (term_arena::Term::Var(goal_var), term_arena::Term::Var(rule_var)) => {
                 if goal_var != rule_var {
@@ -718,7 +723,8 @@ impl SolutionState {
             }
             // incomptaible types
             (_, _) => false,
-        }
+        };
+        dbg!(x)
     }
 
     /// Unify two app terms.

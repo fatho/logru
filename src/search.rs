@@ -486,7 +486,7 @@ impl<R: Resolver> Iterator for SolutionIter<R> {
 #[derive(Debug)]
 pub struct SolutionState {
     /// The current map of goal variables to their values, if any.
-    variables: Vec<Option<term_arena::TermId>>,
+    variables: Vec<VarValue<term_arena::TermId>>,
     /// A log of assignment operations. Everytime a variable is assigned, it is recorded here.
     assignments: Vec<Var>,
     /// The number of initial goal variables that were present in the query.
@@ -495,6 +495,57 @@ pub struct SolutionState {
     terms: TermArena,
     // Temporary scratch memory used for computing the occurs check.
     occurs_stack: Vec<term_arena::TermId>,
+}
+
+/// Amount of constraint on a variable
+#[derive(Debug, Clone)]
+enum VarValue<T> {
+    /// Unconstrained
+    None,
+    /// Partially constrained
+    Constraint(T),
+    /// Fully resolved
+    Value(T),
+}
+
+impl<T> VarValue<T> {
+    fn is_none(&self) -> bool {
+        match self {
+            VarValue::None => true,
+            _ => false,
+        }
+    }
+    
+    fn is_value(&self) -> bool {
+        match self {
+            VarValue::Value(_) => true,
+            _ => false,
+        }
+    }
+    
+    fn as_ref(&self) -> VarValue<&T> {
+        match self {
+            VarValue::None => VarValue::None,
+            VarValue::Constraint(v) => VarValue::Constraint(v),
+            VarValue::Value(v) => VarValue::Value(v),
+        }
+    }
+    
+    fn map<U>(self, f: impl FnOnce(T) -> U) -> VarValue<U> {
+        match self {
+            VarValue::None => VarValue::None,
+            VarValue::Constraint(v) => VarValue::Constraint(f(v)),
+            VarValue::Value(v) => VarValue::Value(f(v)),
+        }
+    }
+    
+    fn some(self) -> Option<T> {
+        match self {
+            VarValue::None => None,
+            VarValue::Constraint(v) => Some(v),
+            VarValue::Value(v) => Some(v),
+        }
+    }
 }
 
 /// A snapshot of the [`SolutionState`] that can be reverted back to.
@@ -513,7 +564,7 @@ impl SolutionState {
     fn new(goal_vars: usize) -> Self {
         Self {
             assignments: vec![],
-            variables: vec![None; goal_vars],
+            variables: vec![VarValue::None; goal_vars],
             goal_vars,
             terms: TermArena::new(),
             occurs_stack: Vec::new(),
@@ -528,7 +579,7 @@ impl SolutionState {
     #[inline(always)]
     pub fn allocate_vars(&mut self, num_vars: usize) -> Var {
         let start = self.variables.len();
-        self.variables.resize(self.variables.len() + num_vars, None);
+        self.variables.resize(self.variables.len() + num_vars, VarValue::None);
         Var::from_ord(start)
     }
 
@@ -548,18 +599,33 @@ impl SolutionState {
             return false;
         }
 
-        self.variables[var.ord()] = Some(value);
+        self.variables[var.ord()] = VarValue::Value(value);
+        self.assignments.push(var);
+
+        true
+    }
+    
+    /// Annotate a variable with a constraint and record this operation in the undo log.
+    /// A variable may be annotated and the annotation modified as long as it doesn't have a concrete value.
+    pub fn set_var_constraint(&mut self, var: Var, constraint: term_arena::TermId) -> bool {
+        debug_assert!(!self.variables[var.ord()].is_value());
+
+        if self.occurs(var, constraint) {
+            return false;
+        }
+
+        self.variables[var.ord()] = VarValue::Constraint(constraint);
         self.assignments.push(var);
 
         true
     }
 
-    /// Return the term assigned to a variable, or `None` if the variable is unbound.
+    /// Return the term assigned to a variable, or `None` if the variable is not fully bound.
     ///
     /// Similar to [`SolutionState::follow_vars`], but intended for directly reading the value of a
     /// variable, rather than simply resolving any bound variables.
     pub fn get_var(&self, mut var: Var) -> Option<TermId> {
-        while let Some(term) = self.variables[var.ord()] {
+        while let VarValue::Value(term) = self.variables[var.ord()] {
             match self.terms.get_term(term) {
                 term_arena::Term::Var(next) => var = next,
                 _ => return Some(term),
@@ -568,6 +634,20 @@ impl SolutionState {
         None
     }
 
+    /// Return the term assigned to a variable, or `None` if the variable is not fully bound.
+    ///
+    /// Similar to [`SolutionState::follow_vars`], but intended for directly reading the value of a
+    /// variable, rather than simply resolving any bound variables.
+    pub fn get_var_constraint(&self, mut var: Var) -> Option<TermId> {
+        while let VarValue::Constraint(term) = self.variables[var.ord()] {
+            match self.terms.get_term(term) {
+                term_arena::Term::Var(next) => var = next,
+                _ => return Some(term),
+            }
+        }
+        None
+    }
+    
     /// Check whether the variable occurs inside the given term.
     fn occurs(&mut self, var: Var, mut term: term_arena::TermId) -> bool {
         loop {
@@ -577,7 +657,11 @@ impl SolutionState {
                         // Found the variable, we clear the stack for an early exit
                         self.occurs_stack.clear();
                         return true;
-                    } else if let Some(value) = self.variables[v.ord()] {
+                    } else if let VarValue::Value(value) = self.variables[v.ord()] {
+                        // Follow already assigned variables
+                        term = value;
+                        continue;
+                    } else if let VarValue::Constraint(value) = self.variables[v.ord()] {
                         // Follow already assigned variables
                         term = value;
                         continue;
@@ -590,6 +674,8 @@ impl SolutionState {
                 // Primitive values cannot contain variables
                 term_arena::Term::Int(_) => {}
                 term_arena::Term::Cut => {}
+                // Constraints can't contain variables
+                term_arena::Term::Constraint(_) => {}
             }
             match self.occurs_stack.pop() {
                 // More terms to check
@@ -615,7 +701,7 @@ impl SolutionState {
         // next step, but profiling showed that it doesn't make a difference if we were to omit
         // those variables from the undo log.
         for var in self.assignments.drain(checkpoint.operations_checkpoint..) {
-            self.variables[var.ord()] = None;
+            self.variables[var.ord()] = VarValue::None;
         }
         self.variables.truncate(checkpoint.variables_checkpoint);
         self.terms.release(&checkpoint.terms_checkpoint);
@@ -625,7 +711,9 @@ impl SolutionState {
     pub fn extract_term(&self, term: term_arena::TermId) -> ast::Term {
         match self.terms.get_term(term) {
             term_arena::Term::Var(v) => {
-                if let Some(value) = &self.variables[v.ord()] {
+                if let VarValue::Value(value) = &self.variables[v.ord()] {
+                    self.extract_term(*value)
+                } else if let VarValue::Constraint(value) = &self.variables[v.ord()] {
                     self.extract_term(*value)
                 } else {
                     ast::Term::Var(v)
@@ -634,6 +722,7 @@ impl SolutionState {
             term_arena::Term::App(app) => ast::Term::App(self.extract_app_term(app)),
             term_arena::Term::Int(i) => ast::Term::Int(i),
             term_arena::Term::Cut => ast::Term::Cut,
+            term_arena::Term::Constraint(i) => ast::Term::Constraint(i),
         }
     }
 
@@ -654,11 +743,11 @@ impl SolutionState {
         self.variables
             .iter()
             .take(self.goal_vars)
-            .map(|val| val.as_ref().map(|t| self.extract_term(*t)))
+            .map(|val| val.as_ref().some().map(|t| self.extract_term(*t)))
             .collect()
     }
 
-    /// Follow the assignment of variables until reaching either an unassigned variable or an
+    /// Follow the assignment of variables until reaching either a not fully constrained variable or an
     /// application term. Used by unification for applying substitution on-the-fly rather than
     /// needing to create a bunch of copies of terms.
     pub fn follow_vars(
@@ -668,7 +757,7 @@ impl SolutionState {
         loop {
             match self.terms.get_term(term) {
                 term_arena::Term::Var(var) => {
-                    if let Some(value) = self.variables[var.ord()] {
+                    if let VarValue::Value(value) = self.variables[var.ord()] {
                         term = value;
                     } else {
                         return (term, term_arena::Term::Var(var));
@@ -692,8 +781,11 @@ impl SolutionState {
         let (goal_term_id, goal_term) = self.follow_vars(goal_term);
         let (rule_term_id, rule_term) = self.follow_vars(rule_term);
 
+        dbg!(goal_term, rule_term);
+        dbg!(self.extract_term(goal_term_id));
+        dbg!(self.extract_term(rule_term_id));
         // Step 2: the actual unification
-        match (goal_term, rule_term) {
+        let x = match (goal_term, rule_term) {
             // variable with variable
             (term_arena::Term::Var(goal_var), term_arena::Term::Var(rule_var)) => {
                 if goal_var != rule_var {
@@ -718,7 +810,12 @@ impl SolutionState {
             }
             // incomptaible types
             (_, _) => false,
-        }
+        };
+        
+        dbg!(goal_term, rule_term);
+        dbg!(self.extract_term(goal_term_id));
+        dbg!(self.extract_term(rule_term_id));
+        dbg!(x)
     }
 
     /// Unify two app terms.

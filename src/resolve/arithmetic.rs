@@ -106,29 +106,35 @@ impl ArithmeticResolver {
                 let prev_constraint = context
                     .solution()
                     .get_var_constraint(var)
-                    .map(|term_id| context.solution().terms().get_term(term_id));
+                    .map(|term_id| context.solution().terms().get_term(term_id))
+                    .and_then(|term| match term {
+                        Term::Constraint(c) => Some(c),
+                        // Constraints could be anything but a custom type is nicer to use on the Rust side
+                        _ => None,
+                    });
 
-                    // TODO: constrain to fully resolved
-                    // TODO: this is way too verbose for what it does
-                let new_term = if let Some(Term::Constraint(prev_constraint)) = prev_constraint {
-                    if right_val < prev_constraint {
-                        Some(right_val)
-                    } else {
-                        None
-                    }
-                } else {
-                    Some(right_val)
-                };
-
-                if let Some(new_term) = new_term {
-                    // Allocate result and assign to unbound variable
-                    let result_term = context.solution_mut().terms_mut().constraint(new_term);
+                let new_constraint = prev_constraint.map(|c|
+                    std::cmp::min(c, right_val)
+                ).unwrap_or(right_val);
+                if new_constraint == 1 {
+                    // numbers don't go below 0, so A<1 means A==0.
+                    let result_term = context.solution_mut().terms_mut().int(0);
                     context
                         .solution_mut()
                         .set_var_constraint(var, result_term)
                         .then_some(Resolved::Success)
-                } else {
+                } else if Some(new_constraint) == prev_constraint {
                     Some(Resolved::Success)
+                } else if new_constraint < 1 {
+                    // numbers don't go below 0, so A<something-less-than-1 means A<0, so no solution
+                    None
+                } else {
+                    // Allocate result and assign to unbound variable
+                    let result_term = context.solution_mut().terms_mut().constraint(new_constraint);
+                    context
+                        .solution_mut()
+                        .set_var_constraint(var, result_term)
+                        .then_some(Resolved::Success)
                 }
             }
             Term::Int(left_val) => (left_val == right_val).then_some(Resolved::Success),

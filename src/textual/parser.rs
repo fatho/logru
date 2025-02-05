@@ -89,6 +89,73 @@ impl ParseErrorKind {
     }
 }
 
+/// Mapping of variable names to indices inside a scope (e.g. a rule or a query).
+/// This tracks the number of ocurrences of each variable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VarScopeCounted {
+    names: Vec<Option<(String, usize)>>,
+}
+
+impl VarScopeCounted {
+    pub fn new() -> Self {
+        Self { names: Vec::new() }
+    }
+
+    /// Return the variable with the given name, if one exists, alongside its occurrence counter.
+    fn get_mut(&mut self, name: &str) -> Option<(Var, &mut usize)> {
+        self.names
+            .iter_mut()
+            .enumerate()
+            .find_map(|(i, n)| match n {
+                Some((n, count)) => (n == name).then_some((i, count)),
+                None => None,
+            })
+            .map(|(i, count)| (Var::from_ord(i), count))
+    }
+
+    /// Get the index associated with a name, or insert a new association.
+    pub fn get_or_insert(&mut self, name: &str) -> Var {
+        match self.get_mut(name) {
+            Some((var, count)) => {
+                *count += 1;
+                var
+            }
+            None => {
+                let ord = self.names.len();
+                self.names.push(Some((name.to_string(), 1)));
+                Var::from_ord(ord)
+            }
+        }
+    }
+
+    /// Insert a new unnamed wildcard variable.
+    pub fn insert_wildcard(&mut self) -> Var {
+        let ord = self.names.len();
+        self.names.push(None);
+        Var::from_ord(ord)
+    }
+
+    /// Iterates variable names alongside their appearance counts
+    pub fn iter_counts(&self) -> impl Iterator<Item = (&str, usize)> {
+        self.names
+            .iter()
+            .filter_map(|n| n.as_ref())
+            .map(|(n, count)| (n.as_str(), *count))
+    }
+}
+
+impl From<VarScopeCounted> for VarScope {
+    fn from(value: VarScopeCounted) -> Self {
+        VarScope {
+            names: value
+                .names
+                .into_iter()
+                .map(|name| name.map(|(name, _count)| name))
+                .collect(),
+        }
+    }
+}
+
 /// A parser for terms using the Prolog-like syntax of the
 /// [TextualUniverse](super::TextualUniverse).
 pub struct Parser<T: SymbolStorage> {
@@ -108,10 +175,10 @@ impl<T: SymbolStorage> Parser<T> {
     // //////////////////////////////// PUBLIC PARSER ////////////////////////////////
     pub fn parse_query_str(&mut self, query: &str) -> Result<Query, ParseError> {
         let mut tokens = TokenStream::new(query);
-        let mut scope = VarScope::new();
+        let mut scope = VarScopeCounted::new();
         let goals = self.parse_conjunction1(&mut tokens, &mut scope)?;
         self.expect_eof(&mut tokens)?;
-        Ok(Query::new(goals, Some(scope)))
+        Ok(Query::new(goals, Some(scope.into())))
     }
 
     pub fn parse_rule_str(&mut self, rule: &str) -> Result<Rule, ParseError> {
@@ -133,7 +200,7 @@ impl<T: SymbolStorage> Parser<T> {
     // //////////////////////////////// PARSER INTERNALS ////////////////////////////////
 
     fn parse_rule(&mut self, tokens: &mut TokenStream) -> Result<Rule, ParseError> {
-        let mut scope = VarScope::new();
+        let mut scope = VarScopeCounted::new();
         let head = self.parse_appterm(tokens, &mut scope)?;
         let tail = match tokens.peek_token() {
             Some(Ok(Token::ImpliedBy)) => {
@@ -150,17 +217,26 @@ impl<T: SymbolStorage> Parser<T> {
             }
             None => return Err(ParseError::new(tokens.eof(), ParseErrorKind::UnexpectedEof)),
         };
+
+        if let Some(_) = scope.iter_counts().filter(|(_, c)| *c == 1).next() {
+            eprint!("Some variables appear only once in this rule:");
+            for (name, _) in scope.iter_counts().filter(|(_, c)| *c == 1) {
+                eprint!(" {},", name);
+            }
+            eprintln!("\nare those typos?");
+        }
+
         Ok(Rule {
             head,
             tail,
-            scope: Some(scope),
+            scope: Some(scope.into()),
         })
     }
 
     fn parse_conjunction1(
         &mut self,
         tokens: &mut TokenStream,
-        scope: &mut VarScope,
+        scope: &mut VarScopeCounted,
     ) -> Result<Vec<Term>, ParseError> {
         let mut goals = vec![self.parse_term(tokens, scope)?];
         loop {
@@ -210,7 +286,7 @@ impl<T: SymbolStorage> Parser<T> {
     fn parse_appterm(
         &mut self,
         tokens: &mut TokenStream,
-        scope: &mut VarScope,
+        scope: &mut VarScopeCounted,
     ) -> Result<AppTerm, ParseError> {
         let functor = self.parse_symbol(tokens)?;
         let mut args = vec![];
@@ -242,7 +318,7 @@ impl<T: SymbolStorage> Parser<T> {
     fn parse_term(
         &mut self,
         tokens: &mut TokenStream,
-        scope: &mut VarScope,
+        scope: &mut VarScopeCounted,
     ) -> Result<Term, ParseError> {
         match tokens.peek_token() {
             Some(Ok(Token::Variable)) => self.parse_variable(tokens, scope).map(Term::Var),
@@ -271,7 +347,7 @@ impl<T: SymbolStorage> Parser<T> {
     fn parse_variable(
         &mut self,
         tokens: &mut TokenStream,
-        scope: &mut VarScope,
+        scope: &mut VarScopeCounted,
     ) -> Result<Var, ParseError> {
         let span = self.expect_token(tokens, Token::Variable)?;
         let var = scope.get_or_insert(tokens.slice(span));

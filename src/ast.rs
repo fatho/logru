@@ -293,7 +293,7 @@ impl Query {
 /// Mapping of variable names to indices inside a scope (e.g. a rule or a query).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarScope {
-    names: Vec<Option<String>>,
+    pub names: Vec<Option<String>>,
 }
 
 impl VarScope {

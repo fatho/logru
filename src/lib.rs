@@ -152,6 +152,7 @@
 #[cfg(doctest)]
 pub struct ReadmeDoctests;
 
+pub mod analysis;
 pub mod ast;
 pub mod resolve;
 pub mod search;

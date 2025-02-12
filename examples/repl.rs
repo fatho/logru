@@ -4,7 +4,8 @@ use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Instant;
 
-use logru::ast::{Sym, VarScope};
+use logru::analysis::find_unique_variables;
+use logru::ast::{Rule, Sym, VarScope};
 use logru::resolve::{ArithmeticResolver, ResolverExt};
 use logru::search::{query_dfs, Resolved, Resolver};
 use logru::term_arena::{AppTerm, ArgRange};
@@ -193,6 +194,22 @@ fn query(state: &mut AppState, args: &str) {
     }
 }
 
+fn analyze_rules(rules: &[Rule]) {
+    for rule in rules.iter().filter(|r| r.scope.is_some()) {
+        let orphans = find_unique_variables(&rule)
+            .iter()
+            .filter_map(|var| rule.scope.as_ref().unwrap().get_name(*var))
+            .collect::<Vec<_>>();
+        if !orphans.is_empty() {
+            print!("Some variables appear only once in the rule:");
+            for name in orphans {
+                print!(" {},", name);
+            }
+            println!("\nare those typos?");
+        }
+    }
+}
+
 static COMMANDS: &[Command] = &[
     Command {
         name: ":define",
@@ -203,7 +220,15 @@ static COMMANDS: &[Command] = &[
                 println!("Usage:\n\t:define <source>");
                 return;
             }
-            match state.universe.load_str(args) {
+            let res = state
+                .universe
+                .parse_rules(args)
+                .map(|rules| {
+                    analyze_rules(&rules);
+                    rules
+                })
+                .map(|rules| state.universe.insert_rules(rules));
+            match res {
                 Ok(()) => {
                     println!("Defined!");
                 }
@@ -248,14 +273,24 @@ static COMMANDS: &[Command] = &[
                 return;
             }
             match std::fs::read_to_string(args) {
-                Ok(contents) => match state.universe.load_str(&contents) {
-                    Ok(()) => {
-                        println!("Loaded!");
+                Ok(contents) => {
+                    let res = state
+                        .universe
+                        .parse_rules(&contents)
+                        .map(|rules| {
+                            analyze_rules(&rules);
+                            rules
+                        })
+                        .map(|rules| state.universe.insert_rules(rules));
+                    match res {
+                        Ok(()) => {
+                            println!("Loaded!");
+                        }
+                        Err(err) => {
+                            println!("Failed to parse: {:?}", err);
+                        }
                     }
-                    Err(err) => {
-                        println!("Failed to parse: {:?}", err);
-                    }
-                },
+                }
                 Err(err) => {
                     println!("Failed to load: {}", err);
                 }

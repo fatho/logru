@@ -11,7 +11,7 @@ pub use parser::{ParseError, ParseErrorKind};
 use pretty::ScopedPrettifier;
 
 use crate::{
-    ast::Query,
+    ast::{Query, Rule},
     resolve::RuleResolver,
     search::{self, SolutionIter},
     universe::{RuleSet, SymbolOverlay, SymbolStore},
@@ -91,12 +91,22 @@ impl TextualUniverse {
         }
     }
 
-    /// Load a set of rules from a string.
-    pub fn load_str(&mut self, rules: &str) -> Result<(), ParseError> {
-        let rules = Parser::new(&mut self.symbols).parse_rules_str(rules)?;
+    /// Parse a set of rules using the symbols defined in this universe.
+    pub fn parse_rules(&mut self, rules: &str) -> Result<Vec<Rule>, ParseError> {
+        Parser::new(&mut self.symbols).parse_rules_str(rules)
+    }
+
+    /// Insert rules previously parsed using [`Self::parse_rules`].
+    pub fn insert_rules(&mut self, rules: Vec<Rule>) {
         for rule in rules {
             self.rules.insert(rule);
         }
+    }
+
+    /// Load a set of rules from a string.
+    pub fn load_str(&mut self, rules: &str) -> Result<(), ParseError> {
+        let rules = self.parse_rules(rules)?;
+        self.insert_rules(rules);
         Ok(())
     }
 

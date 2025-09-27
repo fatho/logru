@@ -127,7 +127,10 @@ impl TextualUniverse {
     /// universe because parsing can discover new symbols that need to be added to the universe
     /// before running the query. Running a query by itself only requires a shared reference, and
     /// thus the pretty-printer is still accessible.
-    pub fn query_dfs(&mut self, query: &str) -> Result<SolutionIter<RuleResolver>, ParseError> {
+    pub fn query_dfs(
+        &'_ mut self,
+        query: &str,
+    ) -> Result<SolutionIter<RuleResolver<'_>>, ParseError> {
         let query = self.prepare_query(query)?;
         Ok(search::query_dfs(
             RuleResolver::new(&self.rules),
@@ -138,7 +141,7 @@ impl TextualUniverse {
     // //////////////////////////////// OTHER ACCESSORS ////////////////////////////////
 
     /// Return a pretty-printer using the symbols defined in this universe.
-    pub fn pretty(&self) -> Prettifier<SymbolStore> {
+    pub fn pretty(&'_ self) -> Prettifier<'_, SymbolStore> {
         Prettifier::new(&self.symbols)
     }
 
@@ -148,7 +151,7 @@ impl TextualUniverse {
     }
 
     /// Return a resolver for the internal rule database.
-    pub fn resolver(&self) -> RuleResolver {
+    pub fn resolver(&'_ self) -> RuleResolver<'_> {
         RuleResolver::new(&self.rules)
     }
 }
@@ -184,7 +187,7 @@ impl<'a> UniverseQuery<'a> {
 
     /// Return a pretty-printer using the symbols defined in this query.
     /// As opposed to TextualUniverse::pretty, this one won't allow any mixups between the sources of the universe and the variables.
-    pub fn pretty(&self) -> ScopedPrettifier<SymbolOverlay> {
+    pub fn pretty(&'_ self) -> ScopedPrettifier<'_, SymbolOverlay<'_>> {
         ScopedPrettifier::new(&self.symbols, self.query().scope.as_ref())
     }
 }

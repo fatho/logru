@@ -20,13 +20,13 @@ pub fn count_variables(rule: &Rule) -> HashMap<Var, usize> {
     vars
 }
 
-fn count_in_args(mut vars: &mut HashMap<Var, usize>, args: &[Term]) {
+fn count_in_args(vars: &mut HashMap<Var, usize>, args: &[Term]) {
     for term in args {
         match term {
             Term::Var(var) => *vars.entry(*var).or_insert(0) += 1,
             Term::Int(_) => {}
             Term::Cut => {}
-            Term::App(appterm) => count_in_args(&mut vars, &appterm.args),
+            Term::App(appterm) => count_in_args(vars, &appterm.args),
         }
     }
 }

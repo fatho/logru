@@ -196,7 +196,7 @@ fn query(state: &mut AppState, args: &str) {
 
 fn analyze_rules(rules: &[Rule]) {
     for rule in rules.iter().filter(|r| r.scope.is_some()) {
-        let orphans = find_unique_variables(&rule)
+        let orphans = find_unique_variables(rule)
             .iter()
             .filter_map(|var| rule.scope.as_ref().unwrap().get_name(*var))
             .collect::<Vec<_>>();
@@ -223,9 +223,8 @@ static COMMANDS: &[Command] = &[
             let res = state
                 .universe
                 .parse_rules(args)
-                .map(|rules| {
-                    analyze_rules(&rules);
-                    rules
+                .inspect(|rules| {
+                    analyze_rules(rules);
                 })
                 .map(|rules| state.universe.insert_rules(rules));
             match res {
@@ -277,9 +276,8 @@ static COMMANDS: &[Command] = &[
                     let res = state
                         .universe
                         .parse_rules(&contents)
-                        .map(|rules| {
-                            analyze_rules(&rules);
-                            rules
+                        .inspect(|rules| {
+                            analyze_rules(rules);
                         })
                         .map(|rules| state.universe.insert_rules(rules));
                     match res {

@@ -101,14 +101,41 @@ impl ArithmeticResolver {
 
         // Left must be variable or integer
         let (_left_id, left_term) = context.solution().follow_vars(left);
-        match left_term {
+        match dbg!(left_term) {
             Term::Var(var) => {
-                // Allocate result and assign to unbound variable
-                let result_term = context.solution_mut().terms_mut().int(right_val);
-                context
-                    .solution_mut()
-                    .set_var(var, result_term)
-                    .then_some(Resolved::Success)
+                let prev_constraint = context
+                    .solution()
+                    .get_var_constraint(var)
+                    .map(|term_id| context.solution().terms().get_term(term_id))
+                    .and_then(|term| match term {
+                        Term::Constraint(c) => Some(c),
+                        // Constraints could be anything but a custom type is nicer to use on the Rust side
+                        _ => None,
+                    });
+
+                let new_constraint = prev_constraint.map(|c|
+                    std::cmp::min(c, right_val)
+                ).unwrap_or(right_val);
+                if new_constraint == 1 {
+                    // numbers don't go below 0, so A<1 means A==0.
+                    let result_term = context.solution_mut().terms_mut().int(0);
+                    context
+                        .solution_mut()
+                        .set_var_constraint(var, result_term)
+                        .then_some(Resolved::Success)
+                } else if Some(new_constraint) == prev_constraint {
+                    Some(Resolved::Success)
+                } else if new_constraint < 1 {
+                    // numbers don't go below 0, so A<something-less-than-1 means A<0, so no solution
+                    None
+                } else {
+                    // Allocate result and assign to unbound variable
+                    let result_term = context.solution_mut().terms_mut().constraint(new_constraint);
+                    context
+                        .solution_mut()
+                        .set_var_constraint(var, result_term)
+                        .then_some(Resolved::Success)
+                }
             }
             Term::Int(left_val) => (left_val == right_val).then_some(Resolved::Success),
             // TODO: log invalid terms
@@ -127,7 +154,7 @@ enum Exp {
     Pow,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Pred {
     Is,
 }
@@ -142,9 +169,9 @@ impl Resolver for ArithmeticResolver {
         AppTerm(sym, args): crate::term_arena::AppTerm,
         context: &mut crate::search::ResolveContext,
     ) -> Option<Resolved<Self::Choice>> {
-        let pred = self.pred_map.get(&sym)?;
+        let pred = self.pred_map.get(dbg!(&sym))?;
         match pred {
-            Pred::Is => self.resolve_is(args, context),
+            Pred::Is => self.resolve_is(dbg!(args), context),
         }
     }
 

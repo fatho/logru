@@ -127,6 +127,13 @@ impl TermArena {
         self.terms.push(Term::Cut);
         term
     }
+    
+    /// Allocate a new constraint term.
+    pub fn constraint(&mut self, int: i64) -> TermId {
+        let term = TermId(self.terms.len());
+        self.terms.push(Term::Constraint(int));
+        term
+    }
 
     /// Copy terms from another "blueprint" arena into this arena, and apply an offset to all the
     /// variable indices used inside the blueprint.
@@ -186,6 +193,7 @@ impl TermArena {
                 )),
                 Term::Int(i) => Term::Int(*i),
                 Term::Cut => Term::Cut,
+                Term::Constraint(c) => Term::Constraint(*c),
             }));
         self.args.extend(
             blueprint
@@ -210,6 +218,7 @@ impl TermArena {
             ast::Term::App(app) => self.insert_ast_appterm(scratch, app),
             ast::Term::Int(i) => self.int(*i),
             ast::Term::Cut => self.cut(),
+            ast::Term::Constraint(i) => self.constraint(*i)
         }
     }
 
@@ -368,6 +377,8 @@ pub enum Term {
     Int(i64),
     /// Prune all further alternatives down to the level of the goal that the cut appeared in.
     Cut,
+    /// A resolver-defined constraint (WIP: less-than)
+    Constraint(i64),
 }
 
 /// An application term of the form `foo(arg1, arg2, arg3, ...)` that is part of a [`TermArena`].

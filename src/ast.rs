@@ -82,6 +82,8 @@ pub enum Term {
     ///
     /// Evaluating it prunes all further choices for the currently active rule.
     Cut,
+    /// Special constraint
+    Constraint(i64),
 }
 
 impl Term {
@@ -96,6 +98,7 @@ impl Term {
             Term::App(app) => app.count_var_slots(),
             Term::Int(_) => 0,
             Term::Cut => 0,
+            Term::Constraint(_) => 0,
         }
     }
 }

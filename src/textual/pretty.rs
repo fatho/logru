@@ -52,6 +52,7 @@ impl<'a, T: Symbols> Prettifier<'a, T> {
             Term::App(app) => self.pretty_app(writer, app, scope),
             Term::Int(int) => write!(writer, "{int}"),
             Term::Cut => write!(writer, "!"),
+            Term::Constraint(int) => write!(writer, "#<{int}"),
         }
     }
 
